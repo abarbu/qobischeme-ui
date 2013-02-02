@@ -1,6 +1,3 @@
-This page is maintained in the package's
-[[https://github.com/abarbu/qobischeme-ui|github repository]].
-
 This egg is a port of the QobiScheme UI to Chicken. Currently
 undocumented but ''examples/define-application-example.scm'' provides
 a good introduction. Unfortunately it generates warnings about
