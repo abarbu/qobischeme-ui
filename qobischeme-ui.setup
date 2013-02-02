@@ -1,0 +1,13 @@
+;;;  -*- Hen -*-
+
+(use setup-helper-mod)
+
+(verify-extension-name "qobischeme-ui")
+
+(parameterize
+  ((default-shared-compile-options '(-shared)))
+ ;; needed to get rid of -inline and -optimize-leaf-procedures
+ (setup-shared-extension-module 'qobischeme-ui (extension-version "1.0")
+                                 #:inline? #f #:types? #t
+                                 #:compile-options '(-O0 -d2)))
+

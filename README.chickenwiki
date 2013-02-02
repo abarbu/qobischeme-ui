@@ -1,0 +1,36 @@
+[[tags: egg ui]]
+[[toc:]]
+
+= qobischeme-ui
+
+This page is maintained in the package's
+[[https://github.com/abarbu/qobischeme-ui|github repository]].
+
+This egg is a port of the QobiScheme UI to Chicken. Currently
+undocumented but ''examples/define-application-example.scm'' provides
+a good introduction. Unfortunately it generates warnings about
+changing variables that are bound in other modules, one day this
+warning will be suppressed.
+
+=== License
+
+Written by the [[Jeffrey Mark Siskind|https://engineering.purdue.edu/~qobi/]] and part of
+QobiScheme.
+
+Maintainer: Andrei Barbu, andrei@0xab.com
+
+   Copyright 1993-1995 University of Toronto. All rights reserved.
+   Copyright 1996 Technion. All rights reserved.
+   Copyright 1996 and 1997 University of Vermont. All rights reserved.
+   Copyright 1997-2001 NEC Research Institute, Inc. All rights reserved.
+   Copyright 2002-2013 Purdue University. All rights reserved.
+   This program is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+   You should have received a copy of the GNU General Public License
+   along with this program.  If not, see http://www.gnu.org/licenses.

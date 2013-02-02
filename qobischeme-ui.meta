@@ -1,0 +1,18 @@
+;;;  -*- Hen -*-
+
+((category ui)
+ (author "Jeffrey Mark Siskind")
+ (maintainer "Andrei Barbu")
+ (license "GPL")
+ (synopsis "A port of the QobiScheme UI library")
+ (depends
+  (setup-helper "1.5.2")
+  (miscmacros "2.91")
+  (check-errors "1.12.0")
+  (condition-utils "1.0.0")
+  xlib scheme2c-compatibility traversal)
+ (test-depends test)
+ (files "qobischeme-ui.meta" 
+        "qobischeme-ui.release-info"
+        "qobischeme-ui.scm" 
+        "qobischeme-ui.setup"))
