@@ -6,7 +6,7 @@ warning will be suppressed.
 
 === License ===
 
-Written by the [[Jeffrey Mark Siskind|https://engineering.purdue.edu/~qobi/]] and part of
+Written by the [[https://engineering.purdue.edu/~qobi/|Jeffrey Mark Siskind]] and part of
 QobiScheme.
 
 Maintainer: Andrei Barbu, andrei@0xab.com
