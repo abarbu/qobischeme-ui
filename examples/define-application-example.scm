@@ -10,19 +10,9 @@
 ;;; c-_ c-/                      31
 ;;;     DEL              delete 127
 
-(use define-structure)
+(use qobischeme-ui xlib)
 (use scheme2c-compatibility)
-(use traversal)
-(use nondeterminism)
-(use nlopt)
-(use csp)
-(use stochastic-discrete)
-(use AD)
-(use image-processing)
 (use linear-algebra)
-(use matplotlib)
-(use scheme2c-gui)
-(use xlib)
 
 (define *line-segments* #f)
 (define *ellipses* #f)
