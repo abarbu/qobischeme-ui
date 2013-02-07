@@ -1402,25 +1402,17 @@
 (define (echo-pane-backward-kill-word-command)
  (echo-pane-command string-backward-kill-word))
 
-(define-syntax define-display-pane-application
- ;; (DEFINE-DISPLAY-PANE-APPLICATION
- ;;  NAME
- ;;  DISPLAY-PANE-WIDTH
- ;;  DISPLAY-PANE-HEIGHT
- ;;  PRE-INITIALIZE-PROCEDURE
- ;;  POST-INITIALIZE-PROCEDURE
- ;;  FINALIZE-PROCEDURE
- ;;  REDRAW-PROCEDURE)
+(define (define-display-pane-application-thunk
+         display-pane-width
+         display-pane-height
+         pre-initialize-procedure
+         post-initialize-procedure
+         finalize-procedure
+         redraw-procedure)
  (er-macro-transformer
   (lambda (form rename compare)
    `(define (,(second form) arguments)
-     (let ((stalin? #f)
-	   (display-pane-width ,(third form))
-	   (display-pane-height ,(fourth form))
-	   (pre-initialize-procedure ,(fifth form))
-	   (post-initialize-procedure ,(sixth form))
-	   (finalize-procedure ,(seventh form))
-	   (redraw-procedure ,(eighth form)))
+     (let ((stalin? #f))
       (set! *post-initialize-procedure* post-initialize-procedure)
       (set! *transcript-pane* #f)
       (set! *echo-pane* #f)
@@ -1991,6 +1983,820 @@
       (process-events)
       (kill-application))))))
 
+(define-syntax define-display-pane-application
+ ;; (DEFINE-DISPLAY-PANE-APPLICATION
+ ;;  NAME
+ ;;  DISPLAY-PANE-WIDTH
+ ;;  DISPLAY-PANE-HEIGHT
+ ;;  PRE-INITIALIZE-PROCEDURE
+ ;;  POST-INITIALIZE-PROCEDURE
+ ;;  FINALIZE-PROCEDURE
+ ;;  REDRAW-PROCEDURE)
+ (er-macro-transformer
+  (lambda (form rename compare)
+   `(define (,(second form) arguments)
+     (define-display-pane-application-thunk
+      ,(third form)
+      ,(fourth form)
+      ,(fifth form)
+      ,(sixth form)
+      ,(seventh form)
+      ,(eighth form))))))
+
+(define (define-application-thunk
+         display-pane-width
+         display-pane-height
+         transcript-lines
+         button-rows
+         button-columns
+         pre-initialize-procedure
+         post-initialize-procedure
+         finalize-procedure
+         redraw-procedure
+         listener-procedure)
+ (let* ((stalin? #f)
+        (button-width
+         (if display-pane-width
+             (- (quotient (+ display-pane-width 4) button-columns)
+                4)
+             100))
+        (width (if display-pane-width
+                   (+ display-pane-width 6)
+                   (+ (* button-columns (+ button-width 4)) 2))))
+  (set! *post-initialize-procedure* post-initialize-procedure)
+  (set! *transcript-pane* #f)
+  (set! *echo-pane* #f)
+  (set! *display* (xopendisplay *display-name*))
+  (when (null-pointer? *display*)
+   (panic "Cannot connect to X server: ~a" (xdisplayname *display-name*)))
+  (set! *screen* (xdefaultscreen *display*))
+  (set! *root-window* (xrootwindow *display* *screen*))
+  (cond
+   (stalin?
+    (set! *white-pixel* (xwhitepixel *display* *screen*))
+    (set! *black-pixel* (xblackpixel *display* *screen*)))
+   (else
+    (set! *background*
+          (xallocnamedcolor3 *display*
+                             (xdefaultcolormap *display* *screen*)
+                             *background-color*))
+    (unless (= (first *background*) 1)
+     (panic "Can't allocate background colorcell"))
+    (set! *foreground*
+          (xallocnamedcolor3 *display*
+                             (xdefaultcolormap *display* *screen*)
+                             *foreground-color*))
+    (unless (= (first *foreground*) 1)
+     (panic "Can't allocate foreground colorcell"))))
+  (set! *roman-font* (xloadqueryfont *display* *roman-font-name*))
+  (when (null-pointer? *roman-font*)
+   (panic "Cannot open font: ~a" *roman-font-name*))
+  (set! *bold-font* (xloadqueryfont *display* *bold-font-name*))
+  (when (null-pointer? *bold-font*)
+   (panic "Cannot open font: ~a" *bold-font-name*))
+  (set! *roman-height*
+        (+ (xfontstruct-ascent *roman-font*)
+           (xfontstruct-descent *roman-font*)))
+  (set! *bold-height*
+        (+ (xfontstruct-ascent *bold-font*)
+           (xfontstruct-descent *bold-font*)))
+  (set! *text-height*
+        (+ (max (xfontstruct-ascent *roman-font*)
+                (xfontstruct-ascent *bold-font*))
+           (max (xfontstruct-descent *roman-font*)
+                (xfontstruct-descent *bold-font*))))
+  (set! *roman-baseline* (xfontstruct-descent *roman-font*))
+  (set! *bold-baseline* (xfontstruct-descent *bold-font*))
+  (set! *text-baseline* (max *roman-baseline* *bold-baseline*))
+  (set! *button-width* button-width)
+  (set! *button-height* (+ *text-height* 4))
+  (set! *display-pane-width* (- width 6))
+  (set! *display-pane-height* display-pane-height)
+  (when transcript-lines
+   (unless (zero? transcript-lines)
+    (set! *transcript-pane-height*
+          (+ (* transcript-lines *text-height*) 4)))
+   (set! *echo-pane-height* (+ *text-height* 4)))
+  (set! *who-line-height* (+ *text-height* 4))
+  (set! *status-pane-width*
+        (+ (max (xtextwidth *roman-font* "Tyi" 3)
+                (max (xtextwidth *roman-font* "Run" 3)
+                     (max (xtextwidth *roman-font* "Pause" 5)
+                          (xtextwidth *roman-font* "Track" 5))))
+           4))
+  (set! *window*
+        (xcreatesimplewindow
+         *display* *root-window*
+         *window-position-x* *window-position-y*
+         width
+         (if transcript-lines
+             (if (zero? transcript-lines)
+                 (+ (* button-rows (+ *button-height* 4))
+                    *display-pane-height*
+                    *echo-pane-height*
+                    *who-line-height*
+                    14)
+                 (+ (* button-rows (+ *button-height* 4))
+                    *display-pane-height*
+                    *transcript-pane-height*
+                    *echo-pane-height*
+                    *who-line-height*
+                    18))
+             (+ (* button-rows (+ *button-height* 4))
+                *display-pane-height*
+                *who-line-height*
+                10))
+         1
+         (if stalin?
+             *black-pixel*
+             (xcolor-pixel (second *foreground*)))
+         (if stalin?
+             *white-pixel*
+             (xcolor-pixel (second *background*)))))
+  (xstorename *display* *window* *program*)
+  (xseticonname *display* *window* *program*)
+  (xselectinput *display*
+                *window*
+                (bit-or EXPOSUREMASK
+                        POINTERMOTIONMASK
+                        BUTTONPRESSMASK
+                        BUTTONRELEASEMASK
+                        KEYPRESSMASK))
+  (set! *display-pane*
+        (xcreatesimplewindow
+         *display* *window*
+         2 (+ (* button-rows (+ *button-height* 4)) 2)
+         *display-pane-width* *display-pane-height*
+         1
+         (if stalin?
+             *black-pixel*
+             (xcolor-pixel (second *foreground*)))
+         (if stalin?
+             *white-pixel*
+             (xcolor-pixel (second *background*)))))
+  (xselectinput *display*
+                *display-pane*
+                (bit-or EXPOSUREMASK
+                        POINTERMOTIONMASK
+                        BUTTONPRESSMASK
+                        BUTTONRELEASEMASK
+                        KEYPRESSMASK))
+  (when transcript-lines
+   (unless (zero? transcript-lines)
+    (set! *transcript-pane*
+          (xcreatesimplewindow
+           *display* *window*
+           2
+           (+ (* button-rows (+ *button-height* 4))
+              *display-pane-height*
+              6)
+           *display-pane-width* *transcript-pane-height* 1
+           (if stalin?
+               *black-pixel*
+               (xcolor-pixel (second *foreground*)))
+           (if stalin?
+               *white-pixel*
+               (xcolor-pixel (second *background*)))))
+    (xselectinput
+     *display* *transcript-pane* (bit-or EXPOSUREMASK KEYPRESSMASK)))
+   (set! *echo-pane*
+         (xcreatesimplewindow
+          *display* *window*
+          2
+          (if (zero? transcript-lines)
+              (+ (* button-rows (+ *button-height* 4))
+                 *display-pane-height*
+                 6)
+              (+ (* button-rows (+ *button-height* 4))
+                 *display-pane-height* *transcript-pane-height* 10))
+          *display-pane-width* *echo-pane-height* 1
+          (if stalin?
+              *black-pixel*
+              (xcolor-pixel (second *foreground*)))
+          (if stalin?
+              *white-pixel*
+              (xcolor-pixel (second *background*)))))
+   (xselectinput
+    *display* *echo-pane* (bit-or EXPOSUREMASK KEYPRESSMASK)))
+  (set! *status-pane*
+        (xcreatesimplewindow
+         *display* *window*
+         2
+         (+ (* button-rows (+ *button-height* 4))
+            *display-pane-height*
+            (if transcript-lines
+                (if (zero? transcript-lines)
+                    (+ *echo-pane-height* 10)
+                    (+ *transcript-pane-height*
+                       *echo-pane-height*
+                       14))
+                6))
+         *status-pane-width* *who-line-height*
+         1
+         (if stalin?
+             *black-pixel*
+             (xcolor-pixel (second *foreground*)))
+         (if stalin?
+             *white-pixel*
+             (xcolor-pixel (second *background*)))))
+  (xselectinput
+   *display* *status-pane* (bit-or EXPOSUREMASK KEYPRESSMASK))
+  (set! *message-pane*
+        (xcreatesimplewindow
+         *display* *window*
+         (+ *status-pane-width* 6)
+         (+ (* button-rows (+ *button-height* 4))
+            *display-pane-height*
+            (if transcript-lines
+                (if (zero? transcript-lines)
+                    (+ *echo-pane-height* 10)
+                    (+ *transcript-pane-height*
+                       *echo-pane-height*
+                       14))
+                6))
+         (- width *status-pane-width* 10) *who-line-height*
+         1
+         (if stalin?
+             *black-pixel*
+             (xcolor-pixel (second *foreground*)))
+         (if stalin?
+             *white-pixel*
+             (xcolor-pixel (second *background*)))))
+  (xselectinput
+   *display* *message-pane* (bit-or EXPOSUREMASK KEYPRESSMASK))
+  (set! *thin-gc*
+        (xcreategc *display* *window* 0 (make-xgcvalues)))
+  (xsetbackground *display* *thin-gc*
+                  (if stalin?
+                      *white-pixel*
+                      (xcolor-pixel (second *background*))))
+  (xsetforeground *display* *thin-gc*
+                  (if stalin?
+                      *black-pixel*
+                      (xcolor-pixel (second *foreground*))))
+  (xsetlineattributes
+   *display* *thin-gc* 0 LINESOLID CAPROUND JOINROUND)
+  (set! *thin-flipping-gc*
+        (xcreategc *display* *window* 0 (make-xgcvalues)))
+  (xsetbackground *display* *thin-flipping-gc*
+                  (if stalin?
+                      *black-pixel*
+                      (xcolor-pixel (second *foreground*))))
+  (xsetforeground *display* *thin-flipping-gc*
+                  (if stalin?
+                      *white-pixel*
+                      (xcolor-pixel (second *background*))))
+  (xsetlineattributes
+   *display* *thin-flipping-gc* 0 LINESOLID CAPROUND JOINROUND)
+  (xsetfunction *display* *thin-flipping-gc* GXXOR)
+  (set! *medium-gc*
+        (xcreategc *display* *window* 0 (make-xgcvalues)))
+  (xsetbackground *display* *medium-gc*
+                  (if stalin?
+                      *white-pixel*
+                      (xcolor-pixel (second *background*))))
+  (xsetforeground *display* *medium-gc*
+                  (if stalin?
+                      *black-pixel*
+                      (xcolor-pixel (second *foreground*))))
+  (xsetlineattributes
+   *display* *medium-gc* 2 LINESOLID CAPROUND JOINROUND)
+  (set! *medium-flipping-gc*
+        (xcreategc *display* *window* 0 (make-xgcvalues)))
+  (xsetbackground *display* *medium-flipping-gc*
+                  (if stalin?
+                      *black-pixel*
+                      (xcolor-pixel (second *foreground*))))
+  (xsetforeground *display* *medium-flipping-gc*
+                  (if stalin?
+                      *white-pixel*
+                      (xcolor-pixel (second *background*))))
+  (xsetlineattributes
+   *display* *medium-flipping-gc* 2 LINESOLID CAPROUND JOINROUND)
+  (xsetfunction *display* *medium-flipping-gc* GXXOR)
+  (set! *thick-gc*
+        (xcreategc *display* *window* 0 (make-xgcvalues)))
+  (xsetbackground *display* *thick-gc*
+                  (if stalin?
+                      *white-pixel*
+                      (xcolor-pixel (second *background*))))
+  (xsetforeground *display* *thick-gc*
+                  (if stalin?
+                      *black-pixel*
+                      (xcolor-pixel (second *foreground*))))
+  (xsetlineattributes
+   *display* *thick-gc* 5 LINESOLID CAPROUND JOINROUND)
+  (set! *thick-flipping-gc*
+        (xcreategc *display* *window* 0 (make-xgcvalues)))
+  (xsetbackground *display* *thick-flipping-gc*
+                  (if stalin?
+                      *black-pixel*
+                      (xcolor-pixel (second *foreground*))))
+  (xsetforeground *display* *thick-flipping-gc*
+                  (if stalin?
+                      *white-pixel*
+                      (xcolor-pixel (second *background*))))
+  (xsetlineattributes
+   *display* *thick-flipping-gc* 5 LINESOLID CAPROUND JOINROUND)
+  (xsetfunction *display* *thick-flipping-gc* GXXOR)
+  (set! *dashed-gc*
+        (xcreategc *display* *window* 0 (make-xgcvalues)))
+  (xsetbackground *display* *dashed-gc*
+                  (if stalin?
+                      *white-pixel*
+                      (xcolor-pixel (second *background*))))
+  (xsetforeground *display* *dashed-gc*
+                  (if stalin?
+                      *black-pixel*
+                      (xcolor-pixel (second *foreground*))))
+  (xsetlineattributes
+   *display* *dashed-gc* 0 LINEONOFFDASH CAPROUND JOINROUND)
+  (set! *dashed-flipping-gc*
+        (xcreategc *display* *window* 0 (make-xgcvalues)))
+  (xsetbackground *display* *dashed-flipping-gc*
+                  (if stalin?
+                      *black-pixel*
+                      (xcolor-pixel (second *foreground*))))
+  (xsetforeground *display* *dashed-flipping-gc*
+                  (if stalin?
+                      *white-pixel*
+                      (xcolor-pixel (second *background*))))
+  (xsetlineattributes
+   *display* *dashed-flipping-gc* 0 LINEONOFFDASH CAPROUND JOINROUND)
+  (xsetfunction *display* *dashed-flipping-gc* GXXOR)
+  (set! *roman-gc*
+        (xcreategc *display* *window* 0 (make-xgcvalues)))
+  (xsetbackground *display* *roman-gc*
+                  (if stalin?
+                      *white-pixel*
+                      (xcolor-pixel (second *background*))))
+  (xsetforeground *display* *roman-gc*
+                  (if stalin?
+                      *black-pixel*
+                      (xcolor-pixel (second *foreground*))))
+  (xsetfont
+   *display* *roman-gc* (xfontstruct-fid *roman-font*))
+  (set! *bold-gc*
+        (xcreategc *display* *window* 0 (make-xgcvalues)))
+  (xsetbackground *display* *bold-gc*
+                  (if stalin?
+                      *white-pixel*
+                      (xcolor-pixel (second *background*))))
+  (xsetforeground *display* *bold-gc*
+                  (if stalin?
+                      *black-pixel*
+                      (xcolor-pixel (second *foreground*))))
+  (xsetfont
+   *display* *bold-gc* (xfontstruct-fid *bold-font*))
+  (set! *bold-flipping-gc*
+        (xcreategc *display* *window* 0 (make-xgcvalues)))
+  (xsetbackground *display* *bold-flipping-gc*
+                  (if stalin?
+                      *black-pixel*
+                      (xcolor-pixel (second *foreground*))))
+  (xsetforeground *display* *bold-flipping-gc*
+                  (if stalin?
+                      *white-pixel*
+                      (xcolor-pixel (second *background*))))
+  (xsetfont
+   *display* *bold-flipping-gc* (xfontstruct-fid *bold-font*))
+  (xsetlineattributes
+   *display* *bold-flipping-gc* 0 LINESOLID CAPROUND JOINROUND)
+  (xsetfunction *display* *bold-flipping-gc* GXXOR)
+  (unless stalin?
+   (set! *light-gray*
+         (xallocnamedcolor3 *display*
+                            (xdefaultcolormap *display* *screen*)
+                            "Light Gray"))
+   (unless (= (first *light-gray*) 1)
+    (panic "Can't allocate light gray colorcell"))
+   (set! *light-gray-gc*
+         (xcreategc *display* *window* 0 (make-xgcvalues)))
+   (xsetbackground *display* *light-gray-gc*
+                   (xcolor-pixel (second *background*)))
+   (xsetforeground *display* *light-gray-gc*
+                   (xcolor-pixel (second *light-gray*)))
+   (xsetlineattributes
+    *display* *light-gray-gc* 0 LINESOLID CAPROUND JOINROUND)
+   (set! *gray*
+         (xallocnamedcolor3 *display*
+                            (xdefaultcolormap *display* *screen*)
+                            "Gray"))
+   (unless (= (first *gray*) 1)
+    (panic "Can't allocate gray colorcell"))
+   (set! *gray-gc*
+         (xcreategc *display* *window* 0 (make-xgcvalues)))
+   (xsetbackground *display* *gray-gc*
+                   (xcolor-pixel (second *background*)))
+   (xsetforeground *display* *gray-gc*
+                   (xcolor-pixel (second *gray*)))
+   (xsetlineattributes
+    *display* *gray-gc* 0 LINESOLID CAPROUND JOINROUND)
+   (set! *red*
+         (xallocnamedcolor3 *display*
+                            (xdefaultcolormap *display* *screen*)
+                            "Red"))
+   (unless (= (first *red*) 1)
+    (panic "Can't allocate red colorcell"))
+   (set! *red-gc*
+         (xcreategc *display* *window* 0 (make-xgcvalues)))
+   (xsetbackground *display* *red-gc*
+                   (xcolor-pixel (second *background*)))
+   (xsetforeground *display* *red-gc*
+                   (xcolor-pixel (second *red*)))
+   (xsetfont
+    *display* *red-gc* (xfontstruct-fid *roman-font*))
+   (xsetlineattributes
+    *display* *red-gc* 0 LINESOLID CAPROUND JOINROUND)
+   (set! *dark-red*
+         (xallocnamedcolor3 *display*
+                            (xdefaultcolormap *display* *screen*)
+                            "Dark Red"))
+   (unless (= (first *dark-red*) 1)
+    (panic "Can't allocate dark red colorcell"))
+   (set! *dark-red-gc*
+         (xcreategc *display* *window* 0 (make-xgcvalues)))
+   (xsetbackground *display* *dark-red-gc*
+                   (xcolor-pixel (second *background*)))
+   (xsetforeground *display* *dark-red-gc*
+                   (xcolor-pixel (second *dark-red*)))
+   (xsetfont
+    *display* *dark-red-gc* (xfontstruct-fid *roman-font*))
+   (xsetlineattributes
+    *display* *dark-red-gc* 0 LINESOLID CAPROUND JOINROUND)
+   (set! *green*
+         (xallocnamedcolor3 *display*
+                            (xdefaultcolormap *display* *screen*)
+                            "Green"))
+   (unless (= (first *green*) 1)
+    (panic "Can't allocate green colorcell"))
+   (set! *green-gc*
+         (xcreategc *display* *window* 0 (make-xgcvalues)))
+   (xsetbackground *display* *green-gc*
+                   (xcolor-pixel (second *background*)))
+   (xsetforeground *display* *green-gc*
+                   (xcolor-pixel (second *green*)))
+   (xsetfont
+    *display* *green-gc* (xfontstruct-fid *roman-font*))
+   (xsetlineattributes
+    *display* *green-gc* 0 LINESOLID CAPROUND JOINROUND)
+   (set! *dark-green*
+         (xallocnamedcolor3 *display*
+                            (xdefaultcolormap *display* *screen*)
+                            "Dark Green"))
+   (unless (= (first *dark-green*) 1)
+    (panic "Can't allocate dark green colorcell"))
+   (set! *dark-green-gc*
+         (xcreategc *display* *window* 0 (make-xgcvalues)))
+   (xsetbackground *display* *dark-green-gc*
+                   (xcolor-pixel (second *background*)))
+   (xsetforeground *display* *dark-green-gc*
+                   (xcolor-pixel (second *dark-green*)))
+   (xsetfont
+    *display* *dark-green-gc* (xfontstruct-fid *roman-font*))
+   (xsetlineattributes
+    *display* *dark-green-gc* 0 LINESOLID CAPROUND JOINROUND)
+   (set! *blue*
+         (xallocnamedcolor3 *display*
+                            (xdefaultcolormap *display* *screen*)
+                            "Blue"))
+   (unless (= (first *blue*) 1)
+    (panic "Can't allocate blue colorcell"))
+   (set! *blue-gc*
+         (xcreategc *display* *window* 0 (make-xgcvalues)))
+   (xsetbackground *display* *blue-gc*
+                   (xcolor-pixel (second *background*)))
+   (xsetforeground *display* *blue-gc*
+                   (xcolor-pixel (second *blue*)))
+   (xsetfont
+    *display* *blue-gc* (xfontstruct-fid *roman-font*))
+   (xsetlineattributes
+    *display* *blue-gc* 0 LINESOLID CAPROUND JOINROUND)
+   (set! *yellow*
+         (xallocnamedcolor3 *display*
+                            (xdefaultcolormap *display* *screen*)
+                            "Yellow"))
+   (unless (= (first *yellow*) 1)
+    (panic "Can't allocate yellow colorcell"))
+   (set! *yellow-gc*
+         (xcreategc *display* *window* 0 (make-xgcvalues)))
+   (xsetbackground *display* *yellow-gc*
+                   (xcolor-pixel (second *background*)))
+   (xsetforeground *display* *yellow-gc*
+                   (xcolor-pixel (second *yellow*)))
+   (xsetfont
+    *display* *yellow-gc* (xfontstruct-fid *roman-font*))
+   (xsetlineattributes
+    *display* *yellow-gc* 0 LINESOLID CAPROUND JOINROUND)
+   (set! *violet*
+         (xallocnamedcolor3 *display*
+                            (xdefaultcolormap *display* *screen*)
+                            "Violet"))
+   (unless (= (first *violet*) 1)
+    (panic "Can't allocate violet colorcell"))
+   (set! *violet-gc*
+         (xcreategc *display* *window* 0 (make-xgcvalues)))
+   (xsetbackground *display* *violet-gc*
+                   (xcolor-pixel (second *background*)))
+   (xsetforeground *display* *violet-gc*
+                   (xcolor-pixel (second *violet*)))
+   (xsetfont
+    *display* *violet-gc* (xfontstruct-fid *roman-font*))
+   (xsetlineattributes
+    *display* *violet-gc* 0 LINESOLID CAPROUND JOINROUND)
+   (set! *orange*
+         (xallocnamedcolor3 *display*
+                            (xdefaultcolormap *display* *screen*)
+                            "Orange"))
+   (unless (= (first *orange*) 1)
+    (panic "Can't allocate orange colorcell"))
+   (set! *orange-gc*
+         (xcreategc *display* *window* 0 (make-xgcvalues)))
+   (xsetbackground *display* *orange-gc*
+                   (xcolor-pixel (second *background*)))
+   (xsetforeground *display* *orange-gc*
+                   (xcolor-pixel (second *orange*)))
+   (xsetfont
+    *display* *orange-gc* (xfontstruct-fid *roman-font*))
+   (xsetlineattributes
+    *display* *orange-gc* 0 LINESOLID CAPROUND JOINROUND)
+   (set! *dark-orange*
+         (xallocnamedcolor3 *display*
+                            (xdefaultcolormap *display* *screen*)
+                            "Dark Orange"))
+   (unless (= (first *dark-orange*) 1)
+    (panic "Can't allocate dark orange colorcell"))
+   (set! *dark-orange-gc*
+         (xcreategc *display* *window* 0 (make-xgcvalues)))
+   (xsetbackground *display* *dark-orange-gc*
+                   (xcolor-pixel (second *background*)))
+   (xsetforeground *display* *dark-orange-gc*
+                   (xcolor-pixel (second *dark-orange*)))
+   (xsetfont
+    *display* *dark-orange-gc* (xfontstruct-fid *roman-font*))
+   (xsetlineattributes
+    *display* *dark-orange-gc* 0 LINESOLID CAPROUND JOINROUND))
+  (set! *color-gc*
+        (xcreategc *display* *window* 0 (make-xgcvalues)))
+  (xsetbackground *display* *color-gc*
+                  (if stalin?
+                      *white-pixel*
+                      (xcolor-pixel (second *background*))))
+  (xsetforeground *display* *color-gc*
+                  (if stalin?
+                      *black-pixel*
+                      (xcolor-pixel (second *foreground*))))
+  (xsetlineattributes
+   *display* *color-gc* 0 LINESOLID CAPROUND JOINROUND)
+  (set! *window-methods* '())
+  (set! *abort-button* #f)
+  (set! *abort-key* #f)
+  (set! *comtab* (make-vector 256 #f))
+  (set! *help* '())
+  (define-key (control #\h) "Help" help-command)
+  (set! *help* '())
+  (define-key (control #\n) "Scroll help window down one line"
+   help-scroll-down-line-command)
+  (define-key (control #\p) "Scroll help window up one line"
+   help-scroll-up-line-command)
+  (define-key (control #\v) "Scroll help window down one page"
+   help-scroll-down-page-command)
+  (define-key (meta #\v) "Scroll help window up one page"
+   help-scroll-up-page-command)
+  (define-key (meta #\<) "Scroll help window to beginning"
+   help-scroll-beginning-command)
+  (define-key (meta #\>) "Scroll help window to end"
+   help-scroll-end-command)
+  (set! *help-comtab* *comtab*)
+  (set! *comtab* (make-vector 256 #f))
+  (when transcript-lines
+   (set! *transcript* '())
+   (set! *input* "")
+   (set! *input-position* 0)
+   (let ((help *help*))
+    (for-each
+      (lambda (character)
+       (define-key character
+        "Enter the typed character into the echo pane"
+        (lambda () (echo-pane-insert-character-command character))))
+     (append
+      (string->list
+       "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
+      (string->list
+       "1234567890-=\\`!@#$%^&*()_+|~[]{};':\",./<>? ")))
+    (set! *help* help))
+   (define-key (control #\a)
+    "Move the cursor to the beginning of the echo pane"
+    echo-pane-beginning-of-line-command)
+   (define-key (control #\b)
+    "Move the cursor backward one character in the echo pane"
+    echo-pane-backward-char-command)
+   (define-key (control #\d)
+    "Delete the character after the cursor in the echo pane"
+    echo-pane-delete-char-command)
+   (define-key (control #\e)
+    "Move the cursor to the end of the echo pane"
+    echo-pane-end-of-line-command)
+   (define-key (control #\f)
+    "Move the cursor forward one character in the echo pane"
+    echo-pane-forward-char-command)
+   (define-key (control #\k)
+    "Delete all characters after the cursor in the echo pane"
+    echo-pane-kill-line-command)
+   (define-key delete-key
+    "Delete the character before the cursor in the echo pane"
+    echo-pane-backward-delete-char-command)
+   (define-key return-key
+    "Process the input in the echo pane"
+    (lambda ()
+     (set! *transcript* (cons (list 'user *input*) *transcript*))
+     (listener-procedure)
+     (set! *input* "")
+     (set! *input-position* 0)
+     (redraw-transcript-pane)
+     (redraw-echo-pane)))
+   (define-key (meta #\b)
+    "Move the cursor backward one word in the echo pane"
+    echo-pane-backward-word-command)
+   (define-key (meta #\d)
+    "Delete the word after the cursor in the echo pane"
+    echo-pane-kill-word-command)
+   (define-key (meta #\f)
+    "Move the cursor forward one word in the echo pane"
+    echo-pane-forward-word-command)
+   (define-key (meta delete-key)
+    "Delete the word before the cursor in the echo pane"
+    echo-pane-backward-kill-word-command))
+  (set! *prefix* '())
+  (set! *status* "Tyi")
+  (set! *message* "")
+  (set! *redraw-procedure* redraw-procedure)
+  (set! *buttons* '())
+  (set! *pause?* #f)
+  (set! *help?* #f)
+  (set! *clear-display-pane?* #t)
+  (let ((hints (make-xwmhints)))
+   (set-xwmhints-input! hints 1)
+   (set-xwmhints-flags! hints INPUTHINT)
+   (xsetwmhints *display* *window* hints))
+  (let ((hints (make-xsizehints))
+        (height (if transcript-lines
+                    (if (zero? transcript-lines)
+                        (+ (* button-rows (+ *button-height* 4))
+                           *display-pane-height*
+                           *echo-pane-height*
+                           *who-line-height*
+                           14)
+                        (+ (* button-rows (+ *button-height* 4))
+                           *display-pane-height*
+                           *transcript-pane-height*
+                           *echo-pane-height*
+                           *who-line-height*
+                           18))
+                    (+ (* button-rows (+ *button-height* 4))
+                       *display-pane-height*
+                       *who-line-height*
+                       10))))
+   (when *window-position?*
+    (set-xsizehints-x! hints *window-position-x*)
+    (set-xsizehints-y! hints *window-position-y*))
+   (set-xsizehints-min_width! hints width)
+   (set-xsizehints-max_width! hints width)
+   (set-xsizehints-min_height! hints height)
+   (set-xsizehints-max_height! hints height)
+   (set-xsizehints-flags! hints
+                          (if *window-position?*
+                              (+ USPOSITION PPOSITION PMINSIZE PMAXSIZE)
+                              (+ PMINSIZE PMAXSIZE)))
+   (xsetwmnormalhints *display* *window* hints))
+  (pre-initialize-procedure)
+  (set-window-method! *display-pane* 'expose redraw-display-pane)
+  (set-window-method! *display-pane* 'BUTTONPRESS region-handler)
+  (when *transcript-pane*
+   (set-window-method!
+    *transcript-pane* 'expose redraw-transcript-pane))
+  (when *echo-pane*
+   (set-window-method! *echo-pane* 'expose redraw-echo-pane))
+  (set-window-method! *status-pane* 'expose redraw-status-pane)
+  (set-window-method! *message-pane* 'expose redraw-message-pane)
+  (set-kill-application!
+   (lambda ()
+    (set-kill-application! (lambda () #t))
+    (finalize-procedure)
+    (when *display*
+     (xfreegc *display* *thin-gc*)
+     (xfreegc *display* *thin-flipping-gc*)
+     (xfreegc *display* *medium-gc*)
+     (xfreegc *display* *medium-flipping-gc*)
+     (xfreegc *display* *thick-gc*)
+     (xfreegc *display* *thick-flipping-gc*)
+     (xfreegc *display* *dashed-gc*)
+     (xfreegc *display* *dashed-flipping-gc*)
+     (xfreegc *display* *roman-gc*)
+     (xfreegc *display* *bold-gc*)
+     (xfreegc *display* *bold-flipping-gc*)
+     (unless stalin?
+      (xfreegc *display* *light-gray-gc*)
+      (xfreegc *display* *gray-gc*)
+      (xfreegc *display* *red-gc*)
+      (xfreegc *display* *dark-red-gc*)
+      (xfreegc *display* *green-gc*)
+      (xfreegc *display* *dark-green-gc*)
+      (xfreegc *display* *blue-gc*)
+      (xfreegc *display* *yellow-gc*)
+      (xfreegc *display* *violet-gc*)
+      (xfreegc *display* *orange-gc*)
+      (xfreegc *display* *dark-orange-gc*)
+      (xfreegc *display* *color-gc*)
+      (xfreecolors *display*
+                   (xdefaultcolormap *display* *screen*)
+                   (unsigned-list->unsigneda
+                    (list (xcolor-pixel (second *background*))))
+                   1
+                   0)
+      (xfreecolors *display*
+                   (xdefaultcolormap *display* *screen*)
+                   (unsigned-list->unsigneda
+                    (list (xcolor-pixel (second *foreground*))))
+                   1
+                   0)
+      (xfreecolors *display*
+                   (xdefaultcolormap *display* *screen*)
+                   (unsigned-list->unsigneda
+                    (list (xcolor-pixel (second *light-gray*))))
+                   1
+                   0)
+      (xfreecolors *display*
+                   (xdefaultcolormap *display* *screen*)
+                   (unsigned-list->unsigneda
+                    (list (xcolor-pixel (second *gray*))))
+                   1
+                   0)
+      (xfreecolors *display*
+                   (xdefaultcolormap *display* *screen*)
+                   (unsigned-list->unsigneda
+                    (list (xcolor-pixel (second *red*))))
+                   1
+                   0)
+      (xfreecolors *display*
+                   (xdefaultcolormap *display* *screen*)
+                   (unsigned-list->unsigneda
+                    (list (xcolor-pixel (second *dark-red*))))
+                   1
+                   0)
+      (xfreecolors *display*
+                   (xdefaultcolormap *display* *screen*)
+                   (unsigned-list->unsigneda
+                    (list (xcolor-pixel (second *green*))))
+                   1
+                   0)
+      (xfreecolors *display*
+                   (xdefaultcolormap *display* *screen*)
+                   (unsigned-list->unsigneda
+                    (list (xcolor-pixel (second *dark-green*))))
+                   1
+                   0)
+      (xfreecolors *display*
+                   (xdefaultcolormap *display* *screen*)
+                   (unsigned-list->unsigneda
+                    (list (xcolor-pixel (second *blue*))))
+                   1
+                   0)
+      (xfreecolors *display*
+                   (xdefaultcolormap *display* *screen*)
+                   (unsigned-list->unsigneda
+                    (list (xcolor-pixel (second *yellow*))))
+                   1
+                   0)
+      (xfreecolors *display*
+                   (xdefaultcolormap *display* *screen*)
+                   (unsigned-list->unsigneda
+                    (list (xcolor-pixel (second *violet*))))
+                   1
+                   0)
+      (xfreecolors *display*
+                   (xdefaultcolormap *display* *screen*)
+                   (unsigned-list->unsigneda
+                    (list (xcolor-pixel (second *orange*))))
+                   1
+                   0)
+      (xfreecolors *display*
+                   (xdefaultcolormap *display* *screen*)
+                   (unsigned-list->unsigneda
+                    (list (xcolor-pixel (second *dark-orange*))))
+                   1
+                   0))
+     (xunloadfont *display* (xfontstruct-fid *roman-font*))
+     (xunloadfont *display* (xfontstruct-fid *bold-font*))
+     (xdestroywindow *display* *window*)
+     (xclosedisplay *display*)
+     (set! *display* #f))
+    #t))
+  (xmapsubwindows *display* *window*)
+  (xmapraised *display* *window*)
+  (process-events)
+  (kill-application)))
+
 (define-syntax define-application
  ;; (DEFINE-APPLICATION
  ;;  NAME
@@ -2007,797 +2813,15 @@
  (er-macro-transformer
   (lambda (form rename compare)
    `(define (,(second form) arguments)
-     (let* ((stalin? #f)
-	    (display-pane-width ,(third form))
-	    (display-pane-height ,(fourth form))
-	    (transcript-lines ,(fifth form))
-	    (button-rows ,(sixth form))
-	    (button-columns ,(seventh form))
-	    (button-width
-	     (if display-pane-width
-		 (- (quotient (+ display-pane-width 4) button-columns)
-		    4)
-		 100))
-	    (width (if display-pane-width
-		       (+ display-pane-width 6)
-		       (+ (* button-columns (+ button-width 4)) 2)))
-	    (pre-initialize-procedure ,(eighth form))
-	    (post-initialize-procedure ,(ninth form))
-	    (finalize-procedure ,(tenth form))
-	    (redraw-procedure ,(scheme2c-compatibility#eleventh form))
-	    (listener-procedure
-	     ,(if (= (length form) 12) (scheme2c-compatibility#twelfth form) '(lambda () #f))))
-      (set! *post-initialize-procedure* post-initialize-procedure)
-      (set! *transcript-pane* #f)
-      (set! *echo-pane* #f)
-      (set! *display* (xopendisplay *display-name*))
-      (when (null-pointer? *display*)
-       (panic "Cannot connect to X server: ~a" (xdisplayname *display-name*)))
-      (set! *screen* (xdefaultscreen *display*))
-      (set! *root-window* (xrootwindow *display* *screen*))
-      (cond
-       (stalin?
-	(set! *white-pixel* (xwhitepixel *display* *screen*))
-	(set! *black-pixel* (xblackpixel *display* *screen*)))
-       (else
-	(set! *background*
-	      (xallocnamedcolor3 *display*
-				(xdefaultcolormap *display* *screen*)
-				*background-color*))
-	(unless (= (first *background*) 1)
-	 (panic "Can't allocate background colorcell"))
-	(set! *foreground*
-	      (xallocnamedcolor3 *display*
-				(xdefaultcolormap *display* *screen*)
-				*foreground-color*))
-	(unless (= (first *foreground*) 1)
-	 (panic "Can't allocate foreground colorcell"))))
-      (set! *roman-font* (xloadqueryfont *display* *roman-font-name*))
-      (when (null-pointer? *roman-font*)
-       (panic "Cannot open font: ~a" *roman-font-name*))
-      (set! *bold-font* (xloadqueryfont *display* *bold-font-name*))
-      (when (null-pointer? *bold-font*)
-       (panic "Cannot open font: ~a" *bold-font-name*))
-      (set! *roman-height*
-	    (+ (xfontstruct-ascent *roman-font*)
-	       (xfontstruct-descent *roman-font*)))
-      (set! *bold-height*
-	    (+ (xfontstruct-ascent *bold-font*)
-	       (xfontstruct-descent *bold-font*)))
-      (set! *text-height*
-	    (+ (max (xfontstruct-ascent *roman-font*)
-		    (xfontstruct-ascent *bold-font*))
-	       (max (xfontstruct-descent *roman-font*)
-		    (xfontstruct-descent *bold-font*))))
-      (set! *roman-baseline* (xfontstruct-descent *roman-font*))
-      (set! *bold-baseline* (xfontstruct-descent *bold-font*))
-      (set! *text-baseline* (max *roman-baseline* *bold-baseline*))
-      (set! *button-width* button-width)
-      (set! *button-height* (+ *text-height* 4))
-      (set! *display-pane-width* (- width 6))
-      (set! *display-pane-height* display-pane-height)
-      (when transcript-lines
-       (unless (zero? transcript-lines)
-	(set! *transcript-pane-height*
-	      (+ (* transcript-lines *text-height*) 4)))
-       (set! *echo-pane-height* (+ *text-height* 4)))
-      (set! *who-line-height* (+ *text-height* 4))
-      (set! *status-pane-width*
-	    (+ (max (xtextwidth *roman-font* "Tyi" 3)
-		    (max (xtextwidth *roman-font* "Run" 3)
-                         (max (xtextwidth *roman-font* "Pause" 5)
-                              (xtextwidth *roman-font* "Track" 5))))
-	       4))
-      (set! *window*
-	    (xcreatesimplewindow
-	     *display* *root-window*
-	     *window-position-x* *window-position-y*
-	     width
-	     (if transcript-lines
-		 (if (zero? transcript-lines)
-		     (+ (* button-rows (+ *button-height* 4))
-			*display-pane-height*
-			*echo-pane-height*
-			*who-line-height*
-			14)
-		     (+ (* button-rows (+ *button-height* 4))
-			*display-pane-height*
-			*transcript-pane-height*
-			*echo-pane-height*
-			*who-line-height*
-			18))
-		 (+ (* button-rows (+ *button-height* 4))
-		    *display-pane-height*
-		    *who-line-height*
-		    10))
-	     1
-	     (if stalin?
-		 *black-pixel*
-		 (xcolor-pixel (second *foreground*)))
-	     (if stalin?
-		 *white-pixel*
-		 (xcolor-pixel (second *background*)))))
-      (xstorename *display* *window* *program*)
-      (xseticonname *display* *window* *program*)
-      (xselectinput *display*
-		    *window*
-		    (bit-or EXPOSUREMASK
-			    POINTERMOTIONMASK
-			    BUTTONPRESSMASK
-			    BUTTONRELEASEMASK
-			    KEYPRESSMASK))
-      (set! *display-pane*
-	    (xcreatesimplewindow
-	     *display* *window*
-	     2 (+ (* button-rows (+ *button-height* 4)) 2)
-	     *display-pane-width* *display-pane-height*
-	     1
-	     (if stalin?
-		 *black-pixel*
-		 (xcolor-pixel (second *foreground*)))
-	     (if stalin?
-		 *white-pixel*
-		 (xcolor-pixel (second *background*)))))
-      (xselectinput *display*
-		    *display-pane*
-		    (bit-or EXPOSUREMASK
-			    POINTERMOTIONMASK
-			    BUTTONPRESSMASK
-			    BUTTONRELEASEMASK
-			    KEYPRESSMASK))
-      (when transcript-lines
-       (unless (zero? transcript-lines)
-	(set! *transcript-pane*
-	      (xcreatesimplewindow
-	       *display* *window*
-	       2
-	       (+ (* button-rows (+ *button-height* 4))
-		  *display-pane-height*
-		  6)
-	       *display-pane-width* *transcript-pane-height* 1
-	       (if stalin?
-		   *black-pixel*
-		   (xcolor-pixel (second *foreground*)))
-	       (if stalin?
-		   *white-pixel*
-		   (xcolor-pixel (second *background*)))))
-	(xselectinput
-	 *display* *transcript-pane* (bit-or EXPOSUREMASK KEYPRESSMASK)))
-       (set! *echo-pane*
-	     (xcreatesimplewindow
-	      *display* *window*
-	      2
-	      (if (zero? transcript-lines)
-		  (+ (* button-rows (+ *button-height* 4))
-		     *display-pane-height*
-		     6)
-		  (+ (* button-rows (+ *button-height* 4))
-		     *display-pane-height* *transcript-pane-height* 10))
-	      *display-pane-width* *echo-pane-height* 1
-	      (if stalin?
-		  *black-pixel*
-		  (xcolor-pixel (second *foreground*)))
-	      (if stalin?
-		  *white-pixel*
-		  (xcolor-pixel (second *background*)))))
-       (xselectinput
-	*display* *echo-pane* (bit-or EXPOSUREMASK KEYPRESSMASK)))
-      (set! *status-pane*
-	    (xcreatesimplewindow
-	     *display* *window*
-	     2
-	     (+ (* button-rows (+ *button-height* 4))
-		*display-pane-height*
-		(if transcript-lines
-		    (if (zero? transcript-lines)
-			(+ *echo-pane-height* 10)
-			(+ *transcript-pane-height*
-			   *echo-pane-height*
-			   14))
-		    6))
-	     *status-pane-width* *who-line-height*
-	     1
-	     (if stalin?
-		 *black-pixel*
-		 (xcolor-pixel (second *foreground*)))
-	     (if stalin?
-		 *white-pixel*
-		 (xcolor-pixel (second *background*)))))
-      (xselectinput
-       *display* *status-pane* (bit-or EXPOSUREMASK KEYPRESSMASK))
-      (set! *message-pane*
-	    (xcreatesimplewindow
-	     *display* *window*
-	     (+ *status-pane-width* 6)
-	     (+ (* button-rows (+ *button-height* 4))
-		*display-pane-height*
-		(if transcript-lines
-		    (if (zero? transcript-lines)
-			(+ *echo-pane-height* 10)
-			(+ *transcript-pane-height*
-			   *echo-pane-height*
-			   14))
-		    6))
-	     (- width *status-pane-width* 10) *who-line-height*
-	     1
-	     (if stalin?
-		 *black-pixel*
-		 (xcolor-pixel (second *foreground*)))
-	     (if stalin?
-		 *white-pixel*
-		 (xcolor-pixel (second *background*)))))
-      (xselectinput
-       *display* *message-pane* (bit-or EXPOSUREMASK KEYPRESSMASK))
-      (set! *thin-gc*
-	    (xcreategc *display* *window* 0 (make-xgcvalues)))
-      (xsetbackground *display* *thin-gc*
-		      (if stalin?
-			  *white-pixel*
-			  (xcolor-pixel (second *background*))))
-      (xsetforeground *display* *thin-gc*
-		      (if stalin?
-			  *black-pixel*
-			  (xcolor-pixel (second *foreground*))))
-      (xsetlineattributes
-       *display* *thin-gc* 0 LINESOLID CAPROUND JOINROUND)
-      (set! *thin-flipping-gc*
-	    (xcreategc *display* *window* 0 (make-xgcvalues)))
-      (xsetbackground *display* *thin-flipping-gc*
-		      (if stalin?
-			  *black-pixel*
-			  (xcolor-pixel (second *foreground*))))
-      (xsetforeground *display* *thin-flipping-gc*
-		      (if stalin?
-			  *white-pixel*
-			  (xcolor-pixel (second *background*))))
-      (xsetlineattributes
-       *display* *thin-flipping-gc* 0 LINESOLID CAPROUND JOINROUND)
-      (xsetfunction *display* *thin-flipping-gc* GXXOR)
-      (set! *medium-gc*
-	    (xcreategc *display* *window* 0 (make-xgcvalues)))
-      (xsetbackground *display* *medium-gc*
-		      (if stalin?
-			  *white-pixel*
-			  (xcolor-pixel (second *background*))))
-      (xsetforeground *display* *medium-gc*
-		      (if stalin?
-			  *black-pixel*
-			  (xcolor-pixel (second *foreground*))))
-      (xsetlineattributes
-       *display* *medium-gc* 2 LINESOLID CAPROUND JOINROUND)
-      (set! *medium-flipping-gc*
-	    (xcreategc *display* *window* 0 (make-xgcvalues)))
-      (xsetbackground *display* *medium-flipping-gc*
-		      (if stalin?
-			  *black-pixel*
-			  (xcolor-pixel (second *foreground*))))
-      (xsetforeground *display* *medium-flipping-gc*
-		      (if stalin?
-			  *white-pixel*
-			  (xcolor-pixel (second *background*))))
-      (xsetlineattributes
-       *display* *medium-flipping-gc* 2 LINESOLID CAPROUND JOINROUND)
-      (xsetfunction *display* *medium-flipping-gc* GXXOR)
-      (set! *thick-gc*
-	    (xcreategc *display* *window* 0 (make-xgcvalues)))
-      (xsetbackground *display* *thick-gc*
-		      (if stalin?
-			  *white-pixel*
-			  (xcolor-pixel (second *background*))))
-      (xsetforeground *display* *thick-gc*
-		      (if stalin?
-			  *black-pixel*
-			  (xcolor-pixel (second *foreground*))))
-      (xsetlineattributes
-       *display* *thick-gc* 5 LINESOLID CAPROUND JOINROUND)
-      (set! *thick-flipping-gc*
-	    (xcreategc *display* *window* 0 (make-xgcvalues)))
-      (xsetbackground *display* *thick-flipping-gc*
-		      (if stalin?
-			  *black-pixel*
-			  (xcolor-pixel (second *foreground*))))
-      (xsetforeground *display* *thick-flipping-gc*
-		      (if stalin?
-			  *white-pixel*
-			  (xcolor-pixel (second *background*))))
-      (xsetlineattributes
-       *display* *thick-flipping-gc* 5 LINESOLID CAPROUND JOINROUND)
-      (xsetfunction *display* *thick-flipping-gc* GXXOR)
-      (set! *dashed-gc*
-	    (xcreategc *display* *window* 0 (make-xgcvalues)))
-      (xsetbackground *display* *dashed-gc*
-		      (if stalin?
-			  *white-pixel*
-			  (xcolor-pixel (second *background*))))
-      (xsetforeground *display* *dashed-gc*
-		      (if stalin?
-			  *black-pixel*
-			  (xcolor-pixel (second *foreground*))))
-      (xsetlineattributes
-       *display* *dashed-gc* 0 LINEONOFFDASH CAPROUND JOINROUND)
-      (set! *dashed-flipping-gc*
-	    (xcreategc *display* *window* 0 (make-xgcvalues)))
-      (xsetbackground *display* *dashed-flipping-gc*
-		      (if stalin?
-			  *black-pixel*
-			  (xcolor-pixel (second *foreground*))))
-      (xsetforeground *display* *dashed-flipping-gc*
-		      (if stalin?
-			  *white-pixel*
-			  (xcolor-pixel (second *background*))))
-      (xsetlineattributes
-       *display* *dashed-flipping-gc* 0 LINEONOFFDASH CAPROUND JOINROUND)
-      (xsetfunction *display* *dashed-flipping-gc* GXXOR)
-      (set! *roman-gc*
-	    (xcreategc *display* *window* 0 (make-xgcvalues)))
-      (xsetbackground *display* *roman-gc*
-		      (if stalin?
-			  *white-pixel*
-			  (xcolor-pixel (second *background*))))
-      (xsetforeground *display* *roman-gc*
-		      (if stalin?
-			  *black-pixel*
-			  (xcolor-pixel (second *foreground*))))
-      (xsetfont
-       *display* *roman-gc* (xfontstruct-fid *roman-font*))
-      (set! *bold-gc*
-	    (xcreategc *display* *window* 0 (make-xgcvalues)))
-      (xsetbackground *display* *bold-gc*
-		      (if stalin?
-			  *white-pixel*
-			  (xcolor-pixel (second *background*))))
-      (xsetforeground *display* *bold-gc*
-		      (if stalin?
-			  *black-pixel*
-			  (xcolor-pixel (second *foreground*))))
-      (xsetfont
-       *display* *bold-gc* (xfontstruct-fid *bold-font*))
-      (set! *bold-flipping-gc*
-	    (xcreategc *display* *window* 0 (make-xgcvalues)))
-      (xsetbackground *display* *bold-flipping-gc*
-		      (if stalin?
-			  *black-pixel*
-			  (xcolor-pixel (second *foreground*))))
-      (xsetforeground *display* *bold-flipping-gc*
-		      (if stalin?
-			  *white-pixel*
-			  (xcolor-pixel (second *background*))))
-      (xsetfont
-       *display* *bold-flipping-gc* (xfontstruct-fid *bold-font*))
-      (xsetlineattributes
-       *display* *bold-flipping-gc* 0 LINESOLID CAPROUND JOINROUND)
-      (xsetfunction *display* *bold-flipping-gc* GXXOR)
-      (unless stalin?
-       (set! *light-gray*
-	     (xallocnamedcolor3 *display*
-			       (xdefaultcolormap *display* *screen*)
-			       "Light Gray"))
-       (unless (= (first *light-gray*) 1)
-	(panic "Can't allocate light gray colorcell"))
-       (set! *light-gray-gc*
-	     (xcreategc *display* *window* 0 (make-xgcvalues)))
-       (xsetbackground *display* *light-gray-gc*
-		       (xcolor-pixel (second *background*)))
-       (xsetforeground *display* *light-gray-gc*
-		       (xcolor-pixel (second *light-gray*)))
-       (xsetlineattributes
-	*display* *light-gray-gc* 0 LINESOLID CAPROUND JOINROUND)
-       (set! *gray*
-	     (xallocnamedcolor3 *display*
-			       (xdefaultcolormap *display* *screen*)
-			       "Gray"))
-       (unless (= (first *gray*) 1)
-	(panic "Can't allocate gray colorcell"))
-       (set! *gray-gc*
-	     (xcreategc *display* *window* 0 (make-xgcvalues)))
-       (xsetbackground *display* *gray-gc*
-		       (xcolor-pixel (second *background*)))
-       (xsetforeground *display* *gray-gc*
-		       (xcolor-pixel (second *gray*)))
-       (xsetlineattributes
-	*display* *gray-gc* 0 LINESOLID CAPROUND JOINROUND)
-       (set! *red*
-	     (xallocnamedcolor3 *display*
-			       (xdefaultcolormap *display* *screen*)
-			       "Red"))
-       (unless (= (first *red*) 1)
-	(panic "Can't allocate red colorcell"))
-       (set! *red-gc*
-	     (xcreategc *display* *window* 0 (make-xgcvalues)))
-       (xsetbackground *display* *red-gc*
-		       (xcolor-pixel (second *background*)))
-       (xsetforeground *display* *red-gc*
-		       (xcolor-pixel (second *red*)))
-       (xsetfont
-	*display* *red-gc* (xfontstruct-fid *roman-font*))
-       (xsetlineattributes
-	*display* *red-gc* 0 LINESOLID CAPROUND JOINROUND)
-       (set! *dark-red*
-	     (xallocnamedcolor3 *display*
-			       (xdefaultcolormap *display* *screen*)
-			       "Dark Red"))
-       (unless (= (first *dark-red*) 1)
-	(panic "Can't allocate dark red colorcell"))
-       (set! *dark-red-gc*
-	     (xcreategc *display* *window* 0 (make-xgcvalues)))
-       (xsetbackground *display* *dark-red-gc*
-		       (xcolor-pixel (second *background*)))
-       (xsetforeground *display* *dark-red-gc*
-		       (xcolor-pixel (second *dark-red*)))
-       (xsetfont
-	*display* *dark-red-gc* (xfontstruct-fid *roman-font*))
-       (xsetlineattributes
-	*display* *dark-red-gc* 0 LINESOLID CAPROUND JOINROUND)
-       (set! *green*
-	     (xallocnamedcolor3 *display*
-			       (xdefaultcolormap *display* *screen*)
-			       "Green"))
-       (unless (= (first *green*) 1)
-	(panic "Can't allocate green colorcell"))
-       (set! *green-gc*
-	     (xcreategc *display* *window* 0 (make-xgcvalues)))
-       (xsetbackground *display* *green-gc*
-		       (xcolor-pixel (second *background*)))
-       (xsetforeground *display* *green-gc*
-		       (xcolor-pixel (second *green*)))
-       (xsetfont
-	*display* *green-gc* (xfontstruct-fid *roman-font*))
-       (xsetlineattributes
-	*display* *green-gc* 0 LINESOLID CAPROUND JOINROUND)
-       (set! *dark-green*
-	     (xallocnamedcolor3 *display*
-			       (xdefaultcolormap *display* *screen*)
-			       "Dark Green"))
-       (unless (= (first *dark-green*) 1)
-	(panic "Can't allocate dark green colorcell"))
-       (set! *dark-green-gc*
-	     (xcreategc *display* *window* 0 (make-xgcvalues)))
-       (xsetbackground *display* *dark-green-gc*
-		       (xcolor-pixel (second *background*)))
-       (xsetforeground *display* *dark-green-gc*
-		       (xcolor-pixel (second *dark-green*)))
-       (xsetfont
-	*display* *dark-green-gc* (xfontstruct-fid *roman-font*))
-       (xsetlineattributes
-	*display* *dark-green-gc* 0 LINESOLID CAPROUND JOINROUND)
-       (set! *blue*
-	     (xallocnamedcolor3 *display*
-			       (xdefaultcolormap *display* *screen*)
-			       "Blue"))
-       (unless (= (first *blue*) 1)
-	(panic "Can't allocate blue colorcell"))
-       (set! *blue-gc*
-	     (xcreategc *display* *window* 0 (make-xgcvalues)))
-       (xsetbackground *display* *blue-gc*
-		       (xcolor-pixel (second *background*)))
-       (xsetforeground *display* *blue-gc*
-		       (xcolor-pixel (second *blue*)))
-       (xsetfont
-	*display* *blue-gc* (xfontstruct-fid *roman-font*))
-       (xsetlineattributes
-	*display* *blue-gc* 0 LINESOLID CAPROUND JOINROUND)
-       (set! *yellow*
-	     (xallocnamedcolor3 *display*
-			       (xdefaultcolormap *display* *screen*)
-			       "Yellow"))
-       (unless (= (first *yellow*) 1)
-	(panic "Can't allocate yellow colorcell"))
-       (set! *yellow-gc*
-	     (xcreategc *display* *window* 0 (make-xgcvalues)))
-       (xsetbackground *display* *yellow-gc*
-		       (xcolor-pixel (second *background*)))
-       (xsetforeground *display* *yellow-gc*
-		       (xcolor-pixel (second *yellow*)))
-       (xsetfont
-	*display* *yellow-gc* (xfontstruct-fid *roman-font*))
-       (xsetlineattributes
-	*display* *yellow-gc* 0 LINESOLID CAPROUND JOINROUND)
-       (set! *violet*
-	     (xallocnamedcolor3 *display*
-			       (xdefaultcolormap *display* *screen*)
-			       "Violet"))
-       (unless (= (first *violet*) 1)
-	(panic "Can't allocate violet colorcell"))
-       (set! *violet-gc*
-	     (xcreategc *display* *window* 0 (make-xgcvalues)))
-       (xsetbackground *display* *violet-gc*
-		       (xcolor-pixel (second *background*)))
-       (xsetforeground *display* *violet-gc*
-		       (xcolor-pixel (second *violet*)))
-       (xsetfont
-	*display* *violet-gc* (xfontstruct-fid *roman-font*))
-       (xsetlineattributes
-	*display* *violet-gc* 0 LINESOLID CAPROUND JOINROUND)
-       (set! *orange*
-	     (xallocnamedcolor3 *display*
-			       (xdefaultcolormap *display* *screen*)
-			       "Orange"))
-       (unless (= (first *orange*) 1)
-	(panic "Can't allocate orange colorcell"))
-       (set! *orange-gc*
-	     (xcreategc *display* *window* 0 (make-xgcvalues)))
-       (xsetbackground *display* *orange-gc*
-		       (xcolor-pixel (second *background*)))
-       (xsetforeground *display* *orange-gc*
-		       (xcolor-pixel (second *orange*)))
-       (xsetfont
-	*display* *orange-gc* (xfontstruct-fid *roman-font*))
-       (xsetlineattributes
-	*display* *orange-gc* 0 LINESOLID CAPROUND JOINROUND)
-       (set! *dark-orange*
-	     (xallocnamedcolor3 *display*
-			       (xdefaultcolormap *display* *screen*)
-			       "Dark Orange"))
-       (unless (= (first *dark-orange*) 1)
-	(panic "Can't allocate dark orange colorcell"))
-       (set! *dark-orange-gc*
-	     (xcreategc *display* *window* 0 (make-xgcvalues)))
-       (xsetbackground *display* *dark-orange-gc*
-		       (xcolor-pixel (second *background*)))
-       (xsetforeground *display* *dark-orange-gc*
-		       (xcolor-pixel (second *dark-orange*)))
-       (xsetfont
-	*display* *dark-orange-gc* (xfontstruct-fid *roman-font*))
-       (xsetlineattributes
-	*display* *dark-orange-gc* 0 LINESOLID CAPROUND JOINROUND))
-      (set! *color-gc*
-	    (xcreategc *display* *window* 0 (make-xgcvalues)))
-      (xsetbackground *display* *color-gc*
-		      (if stalin?
-			  *white-pixel*
-			  (xcolor-pixel (second *background*))))
-      (xsetforeground *display* *color-gc*
-		      (if stalin?
-			  *black-pixel*
-			  (xcolor-pixel (second *foreground*))))
-      (xsetlineattributes
-       *display* *color-gc* 0 LINESOLID CAPROUND JOINROUND)
-      (set! *window-methods* '())
-      (set! *abort-button* #f)
-      (set! *abort-key* #f)
-      (set! *comtab* (make-vector 256 #f))
-      (set! *help* '())
-      (define-key (control #\h) "Help" help-command)
-      (set! *help* '())
-      (define-key (control #\n) "Scroll help window down one line"
-       help-scroll-down-line-command)
-      (define-key (control #\p) "Scroll help window up one line"
-       help-scroll-up-line-command)
-      (define-key (control #\v) "Scroll help window down one page"
-       help-scroll-down-page-command)
-      (define-key (meta #\v) "Scroll help window up one page"
-       help-scroll-up-page-command)
-      (define-key (meta #\<) "Scroll help window to beginning"
-       help-scroll-beginning-command)
-      (define-key (meta #\>) "Scroll help window to end"
-       help-scroll-end-command)
-      (set! *help-comtab* *comtab*)
-      (set! *comtab* (make-vector 256 #f))
-      (when transcript-lines
-       (set! *transcript* '())
-       (set! *input* "")
-       (set! *input-position* 0)
-       (let ((help *help*))
-	(for-each
-          (lambda (character)
-           (define-key character
-            "Enter the typed character into the echo pane"
-            (lambda () (echo-pane-insert-character-command character))))
-	 (append
-	  (string->list
-	   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
-	  (string->list
-	   "1234567890-=\\`!@#$%^&*()_+|~[]{};':\",./<>? ")))
-	(set! *help* help))
-       (define-key (control #\a)
-	"Move the cursor to the beginning of the echo pane"
-	echo-pane-beginning-of-line-command)
-       (define-key (control #\b)
-	"Move the cursor backward one character in the echo pane"
-	echo-pane-backward-char-command)
-       (define-key (control #\d)
-	"Delete the character after the cursor in the echo pane"
-	echo-pane-delete-char-command)
-       (define-key (control #\e)
-	"Move the cursor to the end of the echo pane"
-	echo-pane-end-of-line-command)
-       (define-key (control #\f)
-	"Move the cursor forward one character in the echo pane"
-	echo-pane-forward-char-command)
-       (define-key (control #\k)
-	"Delete all characters after the cursor in the echo pane"
-	echo-pane-kill-line-command)
-       (define-key delete-key
-	"Delete the character before the cursor in the echo pane"
-	echo-pane-backward-delete-char-command)
-       (define-key return-key
-	"Process the input in the echo pane"
-	(lambda ()
-	 (set! *transcript* (cons (list 'user *input*) *transcript*))
-	 (listener-procedure)
-	 (set! *input* "")
-	 (set! *input-position* 0)
-	 (redraw-transcript-pane)
-	 (redraw-echo-pane)))
-       (define-key (meta #\b)
-	"Move the cursor backward one word in the echo pane"
-	echo-pane-backward-word-command)
-       (define-key (meta #\d)
-	"Delete the word after the cursor in the echo pane"
-	echo-pane-kill-word-command)
-       (define-key (meta #\f)
-	"Move the cursor forward one word in the echo pane"
-	echo-pane-forward-word-command)
-       (define-key (meta delete-key)
-	"Delete the word before the cursor in the echo pane"
-	echo-pane-backward-kill-word-command))
-      (set! *prefix* '())
-      (set! *status* "Tyi")
-      (set! *message* "")
-      (set! *redraw-procedure* redraw-procedure)
-      (set! *buttons* '())
-      (set! *pause?* #f)
-      (set! *help?* #f)
-      (set! *clear-display-pane?* #t)
-      (let ((hints (make-xwmhints)))
-       (set-xwmhints-input! hints 1)
-       (set-xwmhints-flags! hints INPUTHINT)
-       (xsetwmhints *display* *window* hints))
-      (let ((hints (make-xsizehints))
-	    (height (if transcript-lines
-			(if (zero? transcript-lines)
-			    (+ (* button-rows (+ *button-height* 4))
-			       *display-pane-height*
-			       *echo-pane-height*
-			       *who-line-height*
-			       14)
-			    (+ (* button-rows (+ *button-height* 4))
-			       *display-pane-height*
-			       *transcript-pane-height*
-			       *echo-pane-height*
-			       *who-line-height*
-			       18))
-			(+ (* button-rows (+ *button-height* 4))
-			   *display-pane-height*
-			   *who-line-height*
-			   10))))
-       (when *window-position?*
-	(set-xsizehints-x! hints *window-position-x*)
-	(set-xsizehints-y! hints *window-position-y*))
-       (set-xsizehints-min_width! hints width)
-       (set-xsizehints-max_width! hints width)
-       (set-xsizehints-min_height! hints height)
-       (set-xsizehints-max_height! hints height)
-       (set-xsizehints-flags! hints
-			  (if *window-position?*
-			      (+ USPOSITION PPOSITION PMINSIZE PMAXSIZE)
-			      (+ PMINSIZE PMAXSIZE)))
-       (xsetwmnormalhints *display* *window* hints))
-      (pre-initialize-procedure)
-      (set-window-method! *display-pane* 'expose redraw-display-pane)
-      (set-window-method! *display-pane* 'BUTTONPRESS region-handler)
-      (when *transcript-pane*
-       (set-window-method!
-	*transcript-pane* 'expose redraw-transcript-pane))
-      (when *echo-pane*
-       (set-window-method! *echo-pane* 'expose redraw-echo-pane))
-      (set-window-method! *status-pane* 'expose redraw-status-pane)
-      (set-window-method! *message-pane* 'expose redraw-message-pane)
-      (set-kill-application!
-       (lambda ()
-	(set-kill-application! (lambda () #t))
-	(finalize-procedure)
-	(when *display*
-	 (xfreegc *display* *thin-gc*)
-	 (xfreegc *display* *thin-flipping-gc*)
-	 (xfreegc *display* *medium-gc*)
-	 (xfreegc *display* *medium-flipping-gc*)
-	 (xfreegc *display* *thick-gc*)
-	 (xfreegc *display* *thick-flipping-gc*)
-	 (xfreegc *display* *dashed-gc*)
-	 (xfreegc *display* *dashed-flipping-gc*)
-	 (xfreegc *display* *roman-gc*)
-	 (xfreegc *display* *bold-gc*)
-	 (xfreegc *display* *bold-flipping-gc*)
-	 (unless stalin?
-	  (xfreegc *display* *light-gray-gc*)
-	  (xfreegc *display* *gray-gc*)
-	  (xfreegc *display* *red-gc*)
-	  (xfreegc *display* *dark-red-gc*)
-	  (xfreegc *display* *green-gc*)
-	  (xfreegc *display* *dark-green-gc*)
-	  (xfreegc *display* *blue-gc*)
-	  (xfreegc *display* *yellow-gc*)
-	  (xfreegc *display* *violet-gc*)
-	  (xfreegc *display* *orange-gc*)
-	  (xfreegc *display* *dark-orange-gc*)
-	  (xfreegc *display* *color-gc*)
-	  (xfreecolors *display*
-		       (xdefaultcolormap *display* *screen*)
-		       (unsigned-list->unsigneda
-			(list (xcolor-pixel (second *background*))))
-		       1
-		       0)
-	  (xfreecolors *display*
-		       (xdefaultcolormap *display* *screen*)
-		       (unsigned-list->unsigneda
-			(list (xcolor-pixel (second *foreground*))))
-		       1
-		       0)
-	  (xfreecolors *display*
-		       (xdefaultcolormap *display* *screen*)
-		       (unsigned-list->unsigneda
-			(list (xcolor-pixel (second *light-gray*))))
-		       1
-		       0)
-	  (xfreecolors *display*
-		       (xdefaultcolormap *display* *screen*)
-		       (unsigned-list->unsigneda
-			(list (xcolor-pixel (second *gray*))))
-		       1
-		       0)
-	  (xfreecolors *display*
-		       (xdefaultcolormap *display* *screen*)
-		       (unsigned-list->unsigneda
-			(list (xcolor-pixel (second *red*))))
-		       1
-		       0)
-	  (xfreecolors *display*
-		       (xdefaultcolormap *display* *screen*)
-		       (unsigned-list->unsigneda
-			(list (xcolor-pixel (second *dark-red*))))
-		       1
-		       0)
-	  (xfreecolors *display*
-		       (xdefaultcolormap *display* *screen*)
-		       (unsigned-list->unsigneda
-			(list (xcolor-pixel (second *green*))))
-		       1
-		       0)
-	  (xfreecolors *display*
-		       (xdefaultcolormap *display* *screen*)
-		       (unsigned-list->unsigneda
-			(list (xcolor-pixel (second *dark-green*))))
-		       1
-		       0)
-	  (xfreecolors *display*
-		       (xdefaultcolormap *display* *screen*)
-		       (unsigned-list->unsigneda
-			(list (xcolor-pixel (second *blue*))))
-		       1
-		       0)
-	  (xfreecolors *display*
-		       (xdefaultcolormap *display* *screen*)
-		       (unsigned-list->unsigneda
-			(list (xcolor-pixel (second *yellow*))))
-		       1
-		       0)
-	  (xfreecolors *display*
-		       (xdefaultcolormap *display* *screen*)
-		       (unsigned-list->unsigneda
-			(list (xcolor-pixel (second *violet*))))
-		       1
-		       0)
-	  (xfreecolors *display*
-		       (xdefaultcolormap *display* *screen*)
-		       (unsigned-list->unsigneda
-			(list (xcolor-pixel (second *orange*))))
-		       1
-		       0)
-	  (xfreecolors *display*
-		       (xdefaultcolormap *display* *screen*)
-		       (unsigned-list->unsigneda
-			(list (xcolor-pixel (second *dark-orange*))))
-		       1
-		       0))
-	 (xunloadfont *display* (xfontstruct-fid *roman-font*))
-	 (xunloadfont *display* (xfontstruct-fid *bold-font*))
-	 (xdestroywindow *display* *window*)
-	 (xclosedisplay *display*)
-	 (set! *display* #f))
-	#t))
-      (xmapsubwindows *display* *window*)
-      (xmapraised *display* *window*)
-      (process-events)
-      (kill-application))))))
+     (define-application-thunk
+      ,(third form)
+      ,(fourth form)
+      ,(fifth form)
+      ,(sixth form)
+      ,(seventh form)
+      ,(eighth form)
+      ,(ninth form)
+      ,(tenth form)
+      ,(scheme2c-compatibility#eleventh form)
+      ,(if (= (length form) 12) (scheme2c-compatibility#twelfth form) '(lambda () #f)))))))
 )

@@ -8,9 +8,7 @@ This page is maintained in the package's
 
 This egg is a port of the QobiScheme UI to Chicken. Currently
 undocumented but ''examples/define-application-example.scm'' provides
-a good introduction. Unfortunately it generates warnings about
-changing variables that are bound in other modules, one day this
-warning will be suppressed.
+a good introduction.
 
 === License
 
