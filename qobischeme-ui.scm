@@ -619,6 +619,7 @@
 	      ((= (xlookupkeysym event 0) XK_PRIOR) (execute-key (meta #\v)))
 	      ((= (xlookupkeysym event 0) XK_NEXT) (execute-key (control #\v)))
 	      ((= (xlookupkeysym event 0) XK_END) (execute-key (meta #\>)))))
+            ((= event-type KEYRELEASE) #f)
 	    (else (panic "Unrecognized event: ~s" event-type)))
       (loop)))))))
 
@@ -1421,7 +1422,7 @@
       (set! *status-pane* #f)
       (set! *message-pane* #f)
       (set! *display* (xopendisplay *display-name*))
-      (when (null-pointer? *display*)
+      (unless *display*
        (panic "Cannot connect to X server: ~a" (xdisplayname *display-name*)))
       (set! *screen* (xdefaultscreen *display*))
       (set! *root-window* (xrootwindow *display* *screen*))
@@ -1445,10 +1446,10 @@
 	(unless (= (first *foreground*) 1)
 	 (panic "Can't allocate foreground colorcell"))))
       (set! *roman-font* (xloadqueryfont *display* *roman-font-name*))
-      (when (null-pointer? *roman-font*)
+      (unless *roman-font*
        (panic "Cannot open font: ~a" *roman-font-name*))
       (set! *bold-font* (xloadqueryfont *display* *bold-font-name*))
-      (when (null-pointer? *bold-font*)
+      (unless *bold-font*
        (panic "Cannot open font: ~a" *bold-font-name*))
       (set! *roman-height*
 	    (+ (xfontstruct-ascent *roman-font*)
@@ -2029,7 +2030,7 @@
   (set! *transcript-pane* #f)
   (set! *echo-pane* #f)
   (set! *display* (xopendisplay *display-name*))
-  (when (null-pointer? *display*)
+  (unless *display*
    (panic "Cannot connect to X server: ~a" (xdisplayname *display-name*)))
   (set! *screen* (xdefaultscreen *display*))
   (set! *root-window* (xrootwindow *display* *screen*))
@@ -2051,10 +2052,10 @@
     (unless (= (first *foreground*) 1)
      (panic "Can't allocate foreground colorcell"))))
   (set! *roman-font* (xloadqueryfont *display* *roman-font-name*))
-  (when (null-pointer? *roman-font*)
+  (unless *roman-font*
    (panic "Cannot open font: ~a" *roman-font-name*))
   (set! *bold-font* (xloadqueryfont *display* *bold-font-name*))
-  (when (null-pointer? *bold-font*)
+  (unless *bold-font*
    (panic "Cannot open font: ~a" *bold-font-name*))
   (set! *roman-height*
         (+ (xfontstruct-ascent *roman-font*)
