@@ -2962,7 +2962,7 @@
         '()
         (case (first (first l))
          ((any-number at-least-one)
-          (append (map-reduce append
+          (append (qmap-reduce append
                               '()
                               (lambda (l)
                                (cons (list (second l) #f)
@@ -2971,7 +2971,7 @@
                               (rest (first l)))
                   (command-bindings (rest l))))
          ((at-most-one exactly-one)
-          (append (map-reduce
+          (append (qmap-reduce
                    append
                    '()
                    (lambda (l)
@@ -3004,7 +3004,7 @@
                                      ,(string-append "-" (first l)))
                            (set! arguments (rest arguments))
                            (set! ,(second l) #t)
-                           ,@(map-reduce
+                           ,@(qmap-reduce
                               append
                               '()
                               (lambda (l)
@@ -3025,7 +3025,7 @@
                            (set! arguments (rest arguments))
                            (when (or ,@(map second (rest (first l)))) (usage))
                            (set! ,(second l1) #t)
-                           ,@(map-reduce
+                           ,@(qmap-reduce
                               append
                               '()
                               (lambda (l)
@@ -3089,7 +3089,7 @@
      (let ((program (first arguments)))
       (define (usage)
        (format
-        stderr-port
+        (current-error-port)
         ,(string-append "usage: ~a" (command-usage (rest (second form))) "~%")
         program)
        (exit -1))
