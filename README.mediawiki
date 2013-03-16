@@ -1,6 +1,15 @@
+This page is maintained in the package's
+[[https://github.com/abarbu/qobischeme-ui|github repository]].
+
 This egg is a port of the QobiScheme UI to Chicken. Currently
 undocumented but ''examples/define-application-example.scm'' provides
-a good introduction.
+a good introduction. One minor incompatibility with QobiScheme is that
+''abort'' is renamed to ''abort-gui'' to avoid a name clash with
+Chicken.
+
+define-command is slightly incompatible with QobiScheme's
+implementation. It expects arguments to be passed to it directly
+rather than through a list and it does not require the program name.
 
 === License ===
 

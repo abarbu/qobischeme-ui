@@ -12,9 +12,13 @@ a good introduction. One minor incompatibility with QobiScheme is that
 ''abort'' is renamed to ''abort-gui'' to avoid a name clash with
 Chicken.
 
+define-command is slightly incompatible with QobiScheme's
+implementation. It expects arguments to be passed to it directly
+rather than through a list and it does not require the program name.
+
 === License
 
-Written by the [[Jeffrey Mark Siskind|https://engineering.purdue.edu/~qobi/]] and part of
+Written by the [[https://engineering.purdue.edu/~qobi/|Jeffrey Mark Siskind]] and part of
 QobiScheme.
 
 Maintainer: Andrei Barbu, andrei@0xab.com
