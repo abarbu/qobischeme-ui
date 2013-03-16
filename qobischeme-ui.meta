@@ -3,7 +3,7 @@
 ((category ui)
  (author "Jeffrey Mark Siskind")
  (maintainer "Andrei Barbu")
- (license "GPL")
+ (license "LGPL")
  (synopsis "A port of the QobiScheme UI library")
  (depends
   (setup-helper "1.5.2")
