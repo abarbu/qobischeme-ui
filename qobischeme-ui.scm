@@ -3,7 +3,10 @@
 (use  srfi-1 posix lolevel extras traversal
      nondeterminism define-structure linear-algebra image-processing
      scheme2c-compatibility)
+(use srfi-13)
 (use posix lolevel foreigners xlib)
+
+(reexport (only srfi-13 string-join))
 
 (begin-for-syntax (require-extension scheme2c-compatibility traversal))
 
@@ -3028,9 +3031,7 @@
                            (set! arguments (rest arguments))
                            (when (or ,@(map second (rest (first l))))
                             (usage (format #f "at most one of ~a is allowed"
-                                           (string-join
-                                            ,@(map (lambda (a) (symbol->string (second a))) (rest (first l1)))
-                                            ", " ))))
+                                           (string-join ',(map (lambda (a) (first a)) (rest (first l))) ", " ))))
                            (set! ,(second l1) #t)
                            ,@(qmap-reduce
                               append
@@ -3058,7 +3059,7 @@
                     (usage
                      (format #f "at least one of "
                              (string-join
-                              ,@(map (lambda (a) (symbol->string (second a))) (rest (first l))) ", " )
+                              ',(map (lambda (a) (symbol->string (second a))) (rest (first l))) ", " )
                              " is required")))
                   (loop (rest l))))
            ((at-most-one any-number required optional rest) (loop (rest l)))
@@ -3071,17 +3072,18 @@
           ((any-number at-least-one at-most-one exactly-one) (loop (rest l)))
           ((required)
            (append
-            `((when (null? arguments) (usage (format #f "required argument ~a missing" ,(symbol->string (first (second (first l)))))))
+            `((when (null? arguments) (usage (format #f "required argument ~a missing"
+                                                     ,(symbol->string (first (second (first l)))))))
               (set! ,(first (second (first l)))
                     (,(third (second (first l))) (first arguments) usage
-                     ,(symbol->string (first (second (first l))))))
+                     ,(format #f "required parameter ~a" (symbol->string (first (second (first l)))))))
               (set! arguments (rest arguments)))
             (loop (rest l))))
           ((optional)
            (cons `(unless (null? arguments)
                    (set! ,(first (second (first l)))
                          (,(third (second (first l))) (first arguments) usage
-                          ,(symbol->string (first (second (first l))))))
+                          ,(format #f "optional parameter ~a" (symbol->string (first (second (first l)))))))
                    (set! arguments (rest arguments)))
                  (loop (rest l))))
           ((rest)
@@ -3090,14 +3092,14 @@
                (set! ,(first (second (first l)))
                      (cons (,(third (second (first l))) (first arguments) usage
                             ,(symbol->string (first (second (first l)))))
-                           ,(first (second (first l)))))
+                           ,(format #f "rest parameter ~a" (first (second (first l))))))
                (set! arguments (rest arguments))
                (loop)))
              (set! ,(first (second (first l))) (reverse ,(first (second (first l)))))))
           (else (fuck-up))))))
    `(define (,(first (second form)) arguments)
      (define (type-error-message usage parameter expected got)
-      (usage (format #f "expected ~a for parameter ~a but got ~s"
+      (usage (format #f "expected ~a for ~a but got ~s"
                      expected parameter got)))
      (define (string-argument string usage parameter-name) string)
      (define (integer-argument string usage parameter-name)
@@ -3112,7 +3114,7 @@
        real))
      (let ((program (first arguments)))
       (define (usage #!optional details)
-       (when details (format (current-error-port) "error: ~s~%" details))
+       (when details (format (current-error-port) "error: ~a~%" details))
        (format
         (current-error-port)
         ,(string-append "usage: ~a" (command-usage (rest (second form))) "~%")
