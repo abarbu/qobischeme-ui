@@ -1,10 +1,8 @@
 (module qobischeme-ui *
 (import chicken scheme foreign)
-(use  srfi-1 posix lolevel extras traversal
+(use srfi-1 posix lolevel extras traversal
      nondeterminism define-structure linear-algebra image-processing
-     scheme2c-compatibility)
-(use srfi-13)
-(use posix lolevel foreigners xlib)
+     scheme2c-compatibility srfi-13 foreigners xlib)
 
 (reexport (only srfi-13 string-join))
 
@@ -2912,7 +2910,9 @@
    (unless (and (list? form)
               (>= (length form) 2)
               (valid-command-arguments? (second form)))
-    (error 'define-command "Improper define-command:" form))
+    (if (valid-command-arguments? (second form))
+        (error 'define-command "Improper define-command:" form)
+        (error 'define-command "Improper define-command, invalid arguments:" form)))
    (define (command-usage l)
     (define (command-usage1 l)
      (let ((s (let loop ((l l))
@@ -3133,4 +3133,256 @@
         ,@(command-keyword-argument-parser (rest (second form)))
         ,@(command-positional-argument-parser (rest (second form)))
         ,@(rest (rest form)))))))))
+
+(define (draw-ellipse display drawable gc ellipse)
+ (let* ((previous-x #f)
+	(previous-y #f)
+	(x0 (ellipse-x0 ellipse))
+	(y0 (ellipse-y0 ellipse))
+	(t0 (ellipse-t0 ellipse))
+	(a (ellipse-a ellipse))
+	(b (ellipse-b ellipse))
+	(rxx (cos t0))
+	(rxy (- (sin t0)))
+	(ryx (- rxy))
+	(ryy rxx))
+  (for-each-n
+   (lambda (i)
+    (let* ((ellipse-x (* a (sin (degrees->radians (* 10 i)))))
+	   (ellipse-y (* b (cos (degrees->radians (* 10 i)))))
+	   (this-x (+ (* rxx ellipse-x) (* rxy ellipse-y) x0))
+	   (this-y (+ (* ryx ellipse-x) (* ryy ellipse-y) y0)))
+     (when previous-x
+      (xdrawline display drawable gc this-x this-y previous-x previous-y))
+     (set! previous-x this-x)
+     (set! previous-y this-y)))
+   37)))
+
+(define (draw-clickable-pixmap-from-pnm pixmap pnm x y scale handler)
+ (draw-pixmap pixmap x y)
+ (define-region x y (* (pnm-width pnm) scale) (* (pnm-height pnm) scale)
+  (lambda (x1 y1)
+   (let ((x1 (quantize-coordinate (/ x1 scale)))
+	 (y1 (quantize-coordinate (/ y1 scale))))
+    (when (pnm-pixel? pnm (- x1 x) (- y1 y))
+     (handler (- x1 x) (- y1 y)))))))
+
+(define (define-spinner-buttons c r name f-up f-down f-print)
+ (define-button c r (string-append "-  " name) #f
+  (lambda () (message "")
+     (f-down)
+     (redraw-buttons)))
+ (define-button (+ c 1) r (lambda () (string-append (f-print) "  +")) #f
+  (lambda () (message "")
+     (f-up)
+     (redraw-buttons))))
+
+(define (xremove-expose-events)
+ (let loop ()
+  (when (> (xpending *display*) 0)
+   (let ((event (xpeekevent *display*)))
+    (when (= (xevent-xany-type event) expose)
+     (xnextevent *display*) (loop))))))
+
+(define (define-sized-button x y size offset text-procedure bold?-procedure method)
+ (let* ((width (exact-round (* size *button-width*)))
+	(button (xcreatesimplewindow
+		 *display* *window* (+ (* offset width) (* x (+ *button-width* 4)) 2)
+		 (+ (* y (+ *button-height* 4)) 2)
+		 width *button-height* 1
+		 (xcolor-pixel (second *foreground*))
+		 (xcolor-pixel (second *background*)))))
+  (when (eq? method abort-command) (set! *abort-button* button))
+  (xselectinput
+   *display* button (bit-or exposuremask buttonpressmask keypressmask))
+  (set-window-method!
+   button
+   'expose
+   (lambda ()
+    (let* ((text (if (procedure? text-procedure)
+		     (text-procedure)
+		     text-procedure))
+	   (bold? (if (procedure? bold?-procedure)
+		      (bold?-procedure)
+		      bold?-procedure))
+	   (text-width
+	    (xtextwidth
+	     (if bold? *bold-font* *roman-font*) text (string-length text)))
+	   (text-x (quotient (- width text-width) 2))
+	   (text-y (- *button-height* (+ *text-baseline* 2))))
+     (xclearwindow *display* button)
+     (xdrawstring *display* button (if bold? *bold-gc* *roman-gc*)
+		  text-x text-y text (string-length text)))))
+  (set-window-method! button 'buttonpress (lambda (x y button state) (method)))
+  (set! *buttons* (cons button *buttons*))
+  (xmapsubwindows *display* *window*)
+  (xmapraised *display* *window*)
+  (lambda ()
+   (set! *buttons* (remove button *buttons*))
+   (set! *window-methods* (remove-if (lambda (m) (equal? (first m) button)) *window-methods*))
+   (xdestroywindow *display* button))))
+
+(define (draw-clickable-strings-with-scroll-bar
+	 first-line set-first-line!
+	 left middle right strings
+	 xmin xmax ymin ymax)
+ ;; belongs in QobiScheme
+ (let* ((visible-lines (quotient (- ymax ymin) *roman-height*))
+	(first-line (first-line))
+	(last-line (min (+ first-line visible-lines) (length strings))))
+  (unless (null? strings)
+   (let* ((y1 ymin)
+	  (y2 ymax)
+	  (y3 (+ y1
+		 (inexact->exact
+		  (floor (* (- y2 y1) (/ first-line (length strings)))))))
+	  (y4 (+ y1
+		 (inexact->exact
+		  (floor (* (- y2 y1) (/ last-line (length strings))))))))
+    (xfillrectangle
+     *display* *display-pane* *thin-gc* (+ xmax 4) y1 1 (- y2 y1))
+    (xfillrectangle
+     *display* *display-pane* *thin-gc* (+ xmax 2) y3 5 (- y4 y3))
+    (define-region
+     (+ xmax 2)
+     y1
+     5
+     (- y2 y1)
+     (lambda (x y)
+      (set-first-line!
+       (min (max 0 (- (length strings) visible-lines))
+	    (quotient (* (length strings) (- y y1)) (- y2 y1))))
+      (redraw-display-pane)))
+    (define-region
+     (+ xmax 2)
+     y3
+     5
+     (- y4 y3)
+     (lambda (x y5)
+      (tracking-pointer
+       #f
+       #f
+       (lambda (x y6)
+	(set-first-line!
+	 (min (max 0 (- (length strings) visible-lines))
+	      (max 0
+		   (+ first-line
+		      (quotient (* (length strings) (- y6 y5)) (- y2 y1))))))
+	(redraw-display-pane)))))))
+  (for-each-indexed (lambda (string i)
+		     (define-button-specific-region
+		      button1
+		      0
+		      0
+		      xmin
+		      (+ (* i *roman-height*) ymin)
+		      (xtextwidth *roman-font* string (string-length string))
+		      *roman-height*
+		      (lambda (x y) (left (+ i first-line))))
+		     (define-button-specific-region
+		      button2
+		      0
+		      0
+		      xmin
+		      (+ (* i *roman-height*) ymin)
+		      (xtextwidth *roman-font* string (string-length string))
+		      *roman-height*
+		      (lambda (x y) (middle (+ i first-line))))
+		     (define-button-specific-region
+		      button3
+		      0
+		      0
+		      xmin
+		      (+ (* i *roman-height*) ymin)
+		      (xtextwidth *roman-font* string (string-length string))
+		      *roman-height*
+		      (lambda (x y) (right (+ i first-line))))
+		     (xdrawstring *display* *display-pane* *roman-gc*
+				  xmin (+ (* (+ i 1) *roman-height*) ymin)
+				  string (string-length string)))
+		    (sublist strings first-line last-line))))
+
+(define (draw-clickable-strings-with-optional-scroll-bar
+    first-line set-first-line!
+    left middle right strings
+    xmin xmax ymin ymax font font-gc-f)
+ ;; belongs in QobiScheme
+ (let* ((font-height (xfontheight font))
+        (visible-lines (quotient (- ymax ymin) font-height))
+	(first-line (first-line))
+	(last-line (min (+ first-line visible-lines) (length strings)))
+        (scroll-bar? (< visible-lines (length strings))))
+  (unless (null? strings)
+   (let* ((y1 ymin)
+	  (y2 ymax)
+	  (y3 (+ y1
+		 (inexact->exact
+		  (floor (* (- y2 y1) (/ first-line (length strings)))))))
+	  (y4 (+ y1
+		 (inexact->exact
+		  (floor (* (- y2 y1) (/ last-line (length strings))))))))
+    (when scroll-bar?
+     (xfillrectangle
+      *display* *display-pane* *thin-gc* (+ xmax 4) y1 1 (- y2 y1))
+     (xfillrectangle
+      *display* *display-pane* *thin-gc* (+ xmax 2) y3 5 (- y4 y3))
+     (define-region
+      (+ xmax 2)
+      y1
+      5
+      (- y2 y1)
+      (lambda (x y)
+       (set-first-line!
+        (min (max 0 (- (length strings) visible-lines))
+             (quotient (* (length strings) (- y y1)) (- y2 y1))))
+       (redraw-display-pane)))
+     (define-region
+      (+ xmax 2)
+      y3
+      5
+      (- y4 y3)
+      (lambda (x y5)
+       (tracking-pointer
+        #f
+        #f
+        (lambda (x y6)
+         (set-first-line!
+          (min (max 0 (- (length strings) visible-lines))
+               (max 0
+                    (+ first-line
+                       (quotient (* (length strings) (- y6 y5)) (- y2 y1))))))
+         (redraw-display-pane))))))))
+  (for-each-indexed (lambda (string i)
+		     (define-button-specific-region
+		      button1
+		      0
+		      0
+		      xmin
+		      (+ (* i font-height) ymin)
+		      (xtextwidth font string (string-length string))
+		      font-height
+		      (lambda (x y) (left (+ i first-line))))
+		     (define-button-specific-region
+		      button2
+		      0
+		      0
+		      xmin
+		      (+ (* i font-height) ymin)
+		      (xtextwidth font string (string-length string))
+		      font-height
+		      (lambda (x y) (middle (+ i first-line))))
+		     (define-button-specific-region
+		      button3
+		      0
+		      0
+		      xmin
+		      (+ (* i font-height) ymin)
+		      (xtextwidth font string (string-length string))
+		      font-height
+		      (lambda (x y) (right (+ i first-line))))
+		     (xdrawstring *display* *display-pane*
+                                  (font-gc-f string i)
+				  xmin (+ (* (+ i 1) font-height) ymin)
+				  string (string-length string)))
+		    (sublist strings first-line last-line))))
 )
