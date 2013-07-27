@@ -11,10 +11,333 @@ define-command is slightly incompatible with QobiScheme's
 implementation. It expects arguments to be passed to it directly
 rather than through a list and it does not require the program name.
 
+  (use qobischeme-ui)
+  (define-application main #f 480 5 2 6
+   (lambda ()
+    (define-button 0 0 "Help" #f help-command)
+    (define-button 5 0 "Quit" #f quit-gui)
+    (define-radio-buttons *object* (lambda () #f)
+     (1 0 line-segment "Line")
+     (2 0 ellipse "Ellipse"))
+    (define-toggle-button 0 1 "Flag" *flag?*
+     (lambda () (say (format #f "Flag=~s" *flag?*))))
+    (define-cycle-button 1 1 *mode*
+     (lambda () (say (format #f "Mode=~s" *mode*)))
+     (a "A")
+     (b "B")
+     (c "C"))
+    (define-integer-range-buttons 2 1 3 1 *k* 0 9
+     (lambda () (format #f "-K ~s" *k*))
+     (lambda () (format #f "+K ~s" *k*))
+     (lambda () (say (format #f "K=~s" *k*))))
+    (define-key (list (control #\x) (control #\c)) "Quit" quit-gui)
+    (define-key (control #\h) "Help" help-command))
+   (lambda () #f)
+   (lambda () #f)
+   (lambda () #f))
+  (main '())
+
+=== Commandline ===
+
+: (define-command (function-name <arguments>) <expression>+)
+
+Define a commandline application. The grammar for arguments and
+expressions is given below but it might be easier to look at an
+example instead.
+
+  <arguments> ::= <keyword>* <required>* <optional>* [<rest>]
+  <rest>     ::= (rest (<variable> <doc> <type>))
+  <optional> ::= (optional (<variable> <doc> <type> <default>))
+  <required> ::= (required (<variable> <doc> <type>))
+  <keyword> ::= (any-number <nondefaulted-keyword>*)
+            |   (at-most-one <defaulted-keyword>*)
+            |   (at-least-one <nondefaulted-keyword>+)
+           |   (exactly-one <defaulted-keyword>+)
+  <defaulted-keyword> ::= (<name> <supplied?> <defaulted-argument>*)
+  <nondefaulted-keyword> ::= (<name> <supplied?> <nondefaulted-argument>*)
+  <defaulted-argument> ::= (<variable> <doc> <type> <default>)
+  <nondefaulted-argument> ::= (<variable> <doc> <type>)
+  <type> ::= integer-argument | real-argument | string-argument
+
+<name> and <doc> are strings.
+<doc> is only used for documentation.
+There can't be a <name> "usage". A -usage is created automatically.
+All of the <variable>s and <supplied?>s must be distinct.
+All of the <name>s must be distinct.
+Can define new <type>s as:
+ (lambda (string) (if (ok? string) (string->value string) (usage <doc>)))
+
+=== Graphical UI ===
+
+: (define-application display-pane-width display-pane-height transcript-lines button-rows button-columns pre-initialize-procedure post-initialize-procedure finalize-procedure redraw-procedure listener-procedure)
+
+The main way of defining GUI.
+
+The GUI is composed of different regions: at the top we have buttons
+in the button pane, the main content of the application is displayed
+below in the display pane, below that are the transcript pane and echo
+pane which are used to output and input text, and at the bottom we
+have the status pane on the left and message pane on the right. Each
+pane is an X window embedded in the main X window of the application.
+
+The ''display-pane-width'' and ''display-pane-height'' are in pixel
+units. When width is ''#f'' other arguments will determine the width
+of the application. The other panes automatically adjust
+their sizes. ''transcript-lines'' defines the number of lines in the
+transcript pane, can be ''#f''. ''button-rows'' and ''button-columns''
+set the size of the button grid in the button pane. Buttons will be
+automatically sized to take up the appropriate amount of space.
+
+All the following procedures take no arguments.
+''pre-initialize-procedure'' code to run before the application is
+ready. This is typically where you define UI
+elements. ''post-initialize-procedure'' code to run right after the UI
+is ready. ''finalize-procedure'' runs after the UI
+exists. ''redraw-procedure'' runs as needed to redraw the
+UI. ''listener-procedure'' runs when return is pressed in the
+transcript pane.
+
+: (define-display-pane-application display-pane-width display-pane-height pre-initialize-procedure post-initialize-procedure finalize-procedure redraw-procedure)
+
+Define a stripped-down UI which will only show a display pane. See ''define-application'' for details.
+
+=== High-level UI ===
+
+: (xremove-expose-events)
+
+It is generally a good idea to call this at the beginning of your
+''redraw-procedure''. It cleans up the X event queue.
+
+: (say string)
+: (status string)
+: (message string)
+
+Write to the transcript, status, and message panes.
+
+: (redraw-buttons)
+: (redraw-display-pane)
+: (redraw-transcript-pane)
+: (redraw-echo-pane)
+: (redraw-status-pane)
+: (redraw-message-pane)
+
+Redraw one of the panes.
+
+: (define-button-specific-region button state-mask state x y width height method)
+
+Call ''method'' with an x y coordinate when the given X button is
+pressed masked by an X state mask.
+
+: (define-button column row name bold?-procedure method)
+
+Display a button in the button pane at the given column and
+row. ''name'' is either a string or a procedure which takes no
+arugments and returns a string. ''bold?-procedure'' is either ''#f''
+or a procedure which takes no arguments and returns a
+boolean. ''method'' will be called with no arugments when the button
+is pressed.
+
+: (define-sized-button x y size offset text-procedure bold?-procedure method)
+
+Like ''define-button'' but takes a ''size'' and ''offset'' which are
+used to define buttons with non-standard sizes.
+
+: (define-toggle-button column row name variable method)
+
+Define a toggle button. A wrapper around ''define-button'' which you
+can look to for details. Will flip the truth value of the variable
+''variable'' and call ''method'' with no arguments.
+
+: (define-radio-buttons variable method (column row symbol string)+)
+
+Display buttons which let you select the state of ''variable''. Will
+call ''method'' with no arguments when the state changes. Any number
+of quads can be provided. Each quad defines a ''column'' and ''row''
+for a button, the symbol to which to set ''variable'', and the string
+to display as the text for that button.
+
+: (define-cycle-button column row variable method (symblol text)+)
+
+Display a button which cycles through a range of values for
+''variable''. ''method'' will be called with no arguments when the
+state changes. Any number of tuples can be provided. Each tuple
+consists of the symbol to which to set the variable to and the text to
+display on the button.
+
+: (define-integer-range-buttons column1 row1 column2 row2 variable min max name1 name2 method)
+
+Define two buttons, the first increments and the second decrements
+''variable''.
+
+: (define-spinner-buttons row column name f-up f-down f-print)
+
+Define two spinner buttons side-by-side on the same row.
+
+: (quit-gui)
+: (abort-gui)
+
+Call the quit or abort handlers.
+
+: (pnm->pixmap pnm)
+: (free-pixmap pixmap)
+: (draw-pixmap pixmap x y)
+
+Convert a PNM to a pixmap, free a pixmap or draw a pixmap given
+coordinates for the top left hand corner of the image.
+
+: (draw-clickable-pixmap-from-pnm pixmap pnm x y scale handler)
+
+Draw a clickable pixmap which calls ''handler'' with the x and y
+position of the mouse click.
+
+: (define-key character documentation command)
+
+Define a shortcut for a given character. ''command'' is a function
+with no arugments that will be called when the keystroke is
+used. ''documentation'' will be displayed in the help overlay.
+
+: (control character)
+: (meta character)
+
+Apply a modifier to a chacter.
+
+: (define-region x y width height method)
+
+Any mouse presses in the given region of the display pane will result
+in calls to ''method'' with the x and y coordinates of the mouse
+press. Note that regions are not permanent, they need to be reset
+every redraw.
+
+: (tracking-pointer twice? press? tracker)
+
+Track the position of the mouse calling ''tracker'' with the x and y
+coordinates of the mouse.
+
+: (define-structure tree-node width height offset text bold? procedure daughters)
+: (tree->tree-node tree)
+: (draw-tree-node tree-node x y)
+: (tree-height tree)
+: (draw-tree tree x y)
+
+Store, draw, and manipulate trees.
+
+: (define-structure alist-node width height offset keys values)
+: (alist->alist-node alist)
+: (draw-alist-node alist-node x y)
+: (alist-height alist)
+: (draw-alist alist x y)
+
+Store, draw, and manipulate alists.
+
+: (help-command)
+
+Show the help overlay. Will be automatically populated by all
+keybindings.
+
+: (help-scroll-up-line-command)
+: (help-scroll-down-line-command)
+: (help-scroll-up-page-command)
+: (help-scroll-down-page-command)
+: (help-scroll-beginning-command)
+: (help-scroll-end-command)
+
+Scrolls the help overlay.
+
+: (draw-ellipse display drawable gc ellipse)
+
+Draw an ellipse with the given GC context.
+
+: (draw-clickable-strings-with-scroll-bar first-line set-first-line! left middle right strings xmin xmax ymin ymax)
+: (draw-clickable-strings-with-optional-scroll-bar first-line set-first-line! left middle right strings xmin xmax ymin ymax font font-gc-f)
+
+Draw a list of strings to the UI with scroll bars or optional scroll
+balls. ''first-line'' is an index into a list of strings,
+''set-first-list!'' is a procedure which is used to update the
+position in the list.
+
+=== Low-level UI ===
+
+: (set-background-task-enabler! procedure)
+: (set-background-task-disabler! procedure)
+: (pause)
+: (set-pause! p)
+
+Enable, disable, and pause background tasks.
+
+: (process-events)
+
+Process pending X events.
+
+: (set-window-method! window event-type method)
+
+Attach a method to a window. ''method'' will be called with a variable
+number of arguments depending on the event sent. ''event-type'' is a
+symbol.
+
+: (send window event-type . &rest)
+
+Send an event to a window. ''event-type'' is a symbol and ''rest''
+contains arguments that will be passed to the handler method.
+
+=== Misc ===
+
+: (define stalin? #f)
+: (char-alphanumeric? char)
+: (beginning-of-word? string position)
+: (end-of-word? string position)
+: (string-backward-word string position)
+: (string-kill-word string position)
+: (string-forward-word string position)
+: (string-backward-kill-word string position)
+: (string-insert-character character)
+: (string-beginning-of-line string position)
+: (string-backward-char string position)
+: (string-delete-char string position)
+: (string-end-of-line string position)
+: (string-forward-char string position)
+: (string-kill-line string position)
+: (string-backward-delete-char string position)
+
+Miscellaneous functions. These probably belong elsewhere.
+
+: (define *frame-rate* 30.0)
+: (pnm-movie->pixmaps pnm-movie)
+: (draw-pixmaps pixmaps x y)
+: (free-pixmaps pixmaps)
+
+Legacy. Use the ffmpeg-video egg instead.
+
+: (echo-pane-command editor)
+: (echo-pane-insert-character-command character)
+: (echo-pane-beginning-of-line-command)
+: (echo-pane-backward-char-command)
+: (echo-pane-delete-char-command)
+: (echo-pane-end-of-line-command)
+: (echo-pane-forward-char-command)
+: (echo-pane-kill-line-command)
+: (echo-pane-backward-delete-char-command)
+: (echo-pane-backward-word-command)
+: (echo-pane-kill-word-command)
+: (echo-pane-command string-kill-word)
+: (echo-pane-forward-word-command)
+: (echo-pane-backward-kill-word-command)
+
+Modify the content of the echo pane. These are internal functions.
+
+: (abort?)
+: (character->pretty-name character)
+: (prefix-string prefix)
+: (region-handler x y button state)
+: (define-structure region button state-mask state x y width height method)
+: (allocate-color-cube! reds greens blues)
+: (abort-command)
+: (kill-application)
+: (set-kill-application! procedure)
+
 === License ===
 
-Written by the [[https://engineering.purdue.edu/~qobi/|Jeffrey Mark Siskind]] and part of
-QobiScheme.
+Written by [[https://engineering.purdue.edu/~qobi/|Jeffrey Mark
+Siskind]] and part of QobiScheme.
 
 Maintainer: Andrei Barbu, andrei@0xab.com
 
