@@ -1,14 +1,13 @@
 [[tags: egg ui]]
 [[toc:]]
 
-= qobischeme-ui
+This page is maintained in the package's [[https://github.com/abarbu/qobischeme-ui|github repository]].
 
-This page is maintained in the package's
-[[https://github.com/abarbu/qobischeme-ui|github repository]].
+== QobiScheme UI
 
-This egg is a port of the QobiScheme UI to Chicken. Currently
-undocumented but ''examples/define-application-example.scm'' provides
-a good introduction. One minor incompatibility with QobiScheme is that
+This egg is a port of the QobiScheme UI to
+Chicken. ''examples/define-application-example.scm'' provides an
+example of a UI. One minor incompatibility with QobiScheme is that
 ''abort'' is renamed to ''abort-gui'' to avoid a name clash with
 Chicken.
 
