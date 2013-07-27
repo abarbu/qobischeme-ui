@@ -5,7 +5,7 @@
      scheme2c-compatibility srfi-13 foreigners xlib)
 (begin-for-syntax (require 'traversal 'scheme2c-compatibility))
 (import-for-syntax traversal scheme2c-compatibility chicken)
-(reexport (only srfi-13 string-join))
+(reexport (only srfi-13 string-join) xlib scheme2c-compatibility traversal)
 
 (begin-for-syntax (require-extension scheme2c-compatibility traversal))
 
@@ -3167,12 +3167,12 @@
     (when (pnm-pixel? pnm (- x1 x) (- y1 y))
      (handler (- x1 x) (- y1 y)))))))
 
-(define (define-spinner-buttons c r name f-up f-down f-print)
- (define-button c r (string-append "-  " name) #f
+(define (define-spinner-buttons column row name f-up f-down f-print)
+ (define-button column row (string-append "-  " name) #f
   (lambda () (message "")
      (f-down)
      (redraw-buttons)))
- (define-button (+ c 1) r (lambda () (string-append (f-print) "  +")) #f
+ (define-button (+ column 1) row (lambda () (string-append (f-print) "  +")) #f
   (lambda () (message "")
      (f-up)
      (redraw-buttons))))
