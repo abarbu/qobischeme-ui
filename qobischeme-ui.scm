@@ -3,7 +3,8 @@
 (use srfi-1 posix lolevel extras traversal
      nondeterminism define-structure linear-algebra image-processing
      scheme2c-compatibility srfi-13 foreigners xlib)
-
+(begin-for-syntax (require 'traversal 'scheme2c-compatibility))
+(import-for-syntax traversal scheme2c-compatibility chicken)
 (reexport (only srfi-13 string-join))
 
 (begin-for-syntax (require-extension scheme2c-compatibility traversal))
@@ -776,12 +777,11 @@
         (else (fuck-up))))
       #f
       (lambda ()
-       (set! ,(fourth form)
-             (case ,(fourth form)
-              ,@(map (lambda (s1 s2) `((,s1) (set! ,(fourth form) ',s2)))
-                     symbols
-                     (append (cdr symbols) (list (first symbols))))
-              (else (fuck-up))))
+       (case ,(fourth form)
+        ,@(map (lambda (s1 s2) `((,s1) (set! ,(fourth form) ',s2)))
+               symbols
+               (append (cdr symbols) (list (first symbols))))
+        (else (fuck-up)))
        (redraw-buttons)
        (,(fifth form))))))))
 
@@ -3181,8 +3181,10 @@
  (let loop ()
   (when (> (xpending *display*) 0)
    (let ((event (xpeekevent *display*)))
-    (when (= (xevent-xany-type event) expose)
+    (when (= (xevent-xany-type event) EXPOSE)
      (xnextevent *display*) (loop))))))
+
+(define (xfontheight font) (+ (xfontstruct-ascent font) (xfontstruct-descent font)))
 
 (define (define-sized-button x y size offset text-procedure bold?-procedure method)
  (let* ((width (exact-round (* size *button-width*)))
@@ -3194,7 +3196,7 @@
 		 (xcolor-pixel (second *background*)))))
   (when (eq? method abort-command) (set! *abort-button* button))
   (xselectinput
-   *display* button (bit-or exposuremask buttonpressmask keypressmask))
+   *display* button (bit-or EXPOSUREMASK BUTTONPRESSMASK KEYPRESSMASK))
   (set-window-method!
    button
    'expose
@@ -3271,7 +3273,7 @@
 	(redraw-display-pane)))))))
   (for-each-indexed (lambda (string i)
 		     (define-button-specific-region
-		      button1
+		      BUTTON1
 		      0
 		      0
 		      xmin
@@ -3280,7 +3282,7 @@
 		      *roman-height*
 		      (lambda (x y) (left (+ i first-line))))
 		     (define-button-specific-region
-		      button2
+		      BUTTON2
 		      0
 		      0
 		      xmin
@@ -3289,7 +3291,7 @@
 		      *roman-height*
 		      (lambda (x y) (middle (+ i first-line))))
 		     (define-button-specific-region
-		      button3
+		      BUTTON3
 		      0
 		      0
 		      xmin
@@ -3354,7 +3356,7 @@
          (redraw-display-pane))))))))
   (for-each-indexed (lambda (string i)
 		     (define-button-specific-region
-		      button1
+		      BUTTON1
 		      0
 		      0
 		      xmin
@@ -3363,7 +3365,7 @@
 		      font-height
 		      (lambda (x y) (left (+ i first-line))))
 		     (define-button-specific-region
-		      button2
+		      BUTTON2
 		      0
 		      0
 		      xmin
@@ -3372,7 +3374,7 @@
 		      font-height
 		      (lambda (x y) (middle (+ i first-line))))
 		     (define-button-specific-region
-		      button3
+		      BUTTON3
 		      0
 		      0
 		      xmin
