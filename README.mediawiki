@@ -39,33 +39,34 @@ rather than through a list and it does not require the program name.
 
 === Commandline ===
 
-: (define-command (function-name <arguments>) <expression>+)
+: (define-command (function-name {arguments}) {expression}+)
 
 Define a commandline application. The grammar for arguments and
 expressions is given below but it might be easier to look at an
 example instead.
 
-  <arguments> ::= <keyword>* <required>* <optional>* [<rest>]
-  <rest>     ::= (rest (<variable> <doc> <type>))
-  <optional> ::= (optional (<variable> <doc> <type> <default>))
-  <required> ::= (required (<variable> <doc> <type>))
-  <keyword> ::= (any-number <nondefaulted-keyword>*)
-            |   (at-most-one <defaulted-keyword>*)
-            |   (at-least-one <nondefaulted-keyword>+)
-           |   (exactly-one <defaulted-keyword>+)
-  <defaulted-keyword> ::= (<name> <supplied?> <defaulted-argument>*)
-  <nondefaulted-keyword> ::= (<name> <supplied?> <nondefaulted-argument>*)
-  <defaulted-argument> ::= (<variable> <doc> <type> <default>)
-  <nondefaulted-argument> ::= (<variable> <doc> <type>)
-  <type> ::= integer-argument | real-argument | string-argument
+  {arguments} ::= {keyword}* {required}* {optional}* [{rest}]
+  {rest}     ::= (rest ({variable} {doc} {type}))
+  {optional} ::= (optional ({variable} {doc} {type} {default}))
+  {required} ::= (required ({variable} {doc} {type}))
+  {keyword} ::= (any-number {nondefaulted-keyword}*)
+            |   (at-most-one {defaulted-keyword}*)
+            |   (at-least-one {nondefaulted-keyword}+)
+           |   (exactly-one {defaulted-keyword}+)
+  {defaulted-keyword} ::= ({name} {supplied?} {defaulted-argument}*)
+  {nondefaulted-keyword} ::= ({name} {supplied?} {nondefaulted-argument}*)
+  {defaulted-argument} ::= ({variable} {doc} {type} {default})
+  {nondefaulted-argument} ::= ({variable} {doc} {type})
+  {type} ::= integer-argument | real-argument | string-argument
 
-<name> and <doc> are strings.
-<doc> is only used for documentation.
-There can't be a <name> "usage". A -usage is created automatically.
-All of the <variable>s and <supplied?>s must be distinct.
-All of the <name>s must be distinct.
-Can define new <type>s as:
- (lambda (string) (if (ok? string) (string->value string) (usage <doc>)))
+{name} and {doc} are strings.
+{doc} is only used for documentation.
+There can't be a {name} "usage". A -usage is created automatically.
+All of the {variable}s and {supplied?}s must be distinct.
+All of the {name}s must be distinct.
+Can define new {type}s as:
+
+  (lambda (string) (if (ok? string) (string->value string) (usage {doc})))
 
 === Graphical UI ===
 
