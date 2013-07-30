@@ -2897,11 +2897,14 @@
                    (>= (length l) 2)
                    (string? (first l))
                    (symbol? (second l))
-                   (every valid-required-parameter? (rest (rest l)))))
+                   (every (lambda (p) (or (valid-required-parameter? p)
+                                    (valid-optional-parameter? p)))
+                          (rest (rest l)))))
                (rest l)))
            (and (or (eq? (first l) 'required) (eq? (first l) 'rest))
               (= (length l) 2)
-              (valid-required-parameter? (second l)))
+              (or (valid-required-parameter? (second l))
+                 (valid-optional-parameter? (second l))))
            (and (eq? (first l) 'optional)
               (= (length l) 2)
               (valid-optional-parameter? (second l))))))
@@ -2998,7 +3001,8 @@
         (cond
          ,@(let loop ((l l))
             (if (null? l)
-                '(((string=? (first arguments) "-usage") (usage)))
+                '(((string=? (first arguments) "-help") (usage))
+                  ((string=? (first arguments) "-usage") (usage)))
                 (case (first (first l))
                  ((any-number at-least-one)
                   (append
@@ -3030,7 +3034,7 @@
                                      ,(string-append "-" (first l1)))
                            (set! arguments (rest arguments))
                            (when (or ,@(map second (rest (first l))))
-                            (usage (format #f "at most one of ~a is allowed"
+                            (usage (format #f "at most one of '~a' is allowed"
                                            (string-join ',(map (lambda (a) (first a)) (rest (first l))) ", " ))))
                            (set! ,(second l1) #t)
                            ,@(qmap-reduce
@@ -3057,10 +3061,11 @@
            ((at-least-one exactly-one)
             (cons `(unless (or ,@(map second (rest (first l))))
                     (usage
-                     (format #f "at least one of "
-                             (string-join
-                              ',(map (lambda (a) (symbol->string (second a))) (rest (first l))) ", " )
-                             " is required")))
+                     (string-append
+                      "at least one of '"
+                      (string-join
+                       ',(map (lambda (a) (symbol->string (second a))) (rest (first l))) ", " )
+                      "' is required")))
                   (loop (rest l))))
            ((at-most-one any-number required optional rest) (loop (rest l)))
            (else (fuck-up)))))))
@@ -3092,7 +3097,7 @@
                (set! ,(first (second (first l)))
                      (cons (,(third (second (first l))) (first arguments) usage
                             ,(symbol->string (first (second (first l)))))
-                           ,(format #f "rest parameter ~a" (first (second (first l))))))
+                           ,(first (second (first l)))))
                (set! arguments (rest arguments))
                (loop)))
              (set! ,(first (second (first l))) (reverse ,(first (second (first l)))))))

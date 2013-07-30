@@ -6,66 +6,68 @@ example of a UI. One minor incompatibility with QobiScheme is that
 ''abort'' is renamed to ''abort-gui'' to avoid a name clash with
 Chicken.
 
-define-command is slightly incompatible with QobiScheme's
-implementation. It expects arguments to be passed to it directly
-rather than through a list and it does not require the program name.
-
-  (use qobischeme-ui)
-  (define-application main #f 480 5 2 6
-   (lambda ()
-    (define-button 0 0 "Help" #f help-command)
-    (define-button 5 0 "Quit" #f quit-gui)
-    (define-radio-buttons *object* (lambda () #f)
-     (1 0 line-segment "Line")
-     (2 0 ellipse "Ellipse"))
-    (define-toggle-button 0 1 "Flag" *flag?*
-     (lambda () (say (format #f "Flag=~s" *flag?*))))
-    (define-cycle-button 1 1 *mode*
-     (lambda () (say (format #f "Mode=~s" *mode*)))
-     (a "A")
-     (b "B")
-     (c "C"))
-    (define-integer-range-buttons 2 1 3 1 *k* 0 9
-     (lambda () (format #f "-K ~s" *k*))
-     (lambda () (format #f "+K ~s" *k*))
-     (lambda () (say (format #f "K=~s" *k*))))
-    (define-key (list (control #\x) (control #\c)) "Quit" quit-gui)
-    (define-key (control #\h) "Help" help-command))
-   (lambda () #f)
-   (lambda () #f)
-   (lambda () #f))
-  (main '())
-
 === Commandline ===
 
 : (define-command (function-name {arguments}) {expression}+)
 
 Define a commandline application. The grammar for arguments and
-expressions is given below but it might be easier to look at an
-example instead.
+expressions is given below but it might be easier to look at the
+example instead. ''define-command'' produces error messages which
+print a usage line and explain why the input is incorrect.
+
+''define-command'' is slightly incompatible with QobiScheme's
+implementation. It expects arguments to be passed to it directly
+rather than through a list and it does not require the program
+name. It also fixes a bug where repeated arguments were provided in
+the wrong order.
 
   {arguments} ::= {keyword}* {required}* {optional}* [{rest}]
-  {rest}     ::= (rest ({variable} {doc} {type}))
-  {optional} ::= (optional ({variable} {doc} {type} {default}))
-  {required} ::= (required ({variable} {doc} {type}))
-  {keyword} ::= (any-number {nondefaulted-keyword}*)
+  {rest}     ::= (rest {defaulted-argument})
+  {optional} ::= (optional {defaulted-argument})
+  {required} ::= (required {defaulted-argument})
+  {keyword} ::= (any-number {defaulted-keyword}*)
             |   (at-most-one {defaulted-keyword}*)
-            |   (at-least-one {nondefaulted-keyword}+)
-           |   (exactly-one {defaulted-keyword}+)
+            |   (at-least-one {defaulted-keyword}+)
+            |   (exactly-one {defaulted-keyword}+)
   {defaulted-keyword} ::= ({name} {supplied?} {defaulted-argument}*)
-  {nondefaulted-keyword} ::= ({name} {supplied?} {nondefaulted-argument}*)
   {defaulted-argument} ::= ({variable} {doc} {type} {default})
-  {nondefaulted-argument} ::= ({variable} {doc} {type})
   {type} ::= integer-argument | real-argument | string-argument
 
-{name} and {doc} are strings.
-{doc} is only used for documentation.
-There can't be a {name} "usage". A -usage is created automatically.
-All of the {variable}s and {supplied?}s must be distinct.
-All of the {name}s must be distinct.
-Can define new {type}s as:
+{name} and {doc} are strings. {doc} is only used for documentation.
+There can't be a {name} "usage" or "help". ''-usage'' and ''-help''
+are created automatically. All of the {variable}s and {supplied?}s
+must be distinct. All of the {name}s must be distinct.
+
+Note that ''any-number'', ''at-least-one'', ''rest'', and ''required''
+allow nondefaulted-keywords. This is to keep backward compatibility
+with QobiScheme but this version encourages using
+{defaulted-argument}s everywhere for simplicity.
+
+You can define new {type}s as:
 
   (lambda (string) (if (ok? string) (string->value string) (usage {doc})))
+
+An example that should make everything clear:
+
+  (define-command
+    (main (exactly-one ("file" file? (file "file" string-argument ""))
+                       ("other-file" other-file?
+                          (arg1 "pathname" string-argument "")
+                          (arg2 "version" real-argument 0)))
+          (at-most-one ("flag" flag?))
+          (any-number ("more" more? (more "more" string-argument "")))
+          (at-least-one ("alt" alt? (alt-arg "arg" string-argument "")))
+          (required (needed "needed" string-argument ""))
+          (optional (maybe "maybe" string-argument ""))
+          (optional (another-maybe "another-maybe" string-argument ""))
+          (rest (everything "everything" string-argument)))
+    (pp (list file? file other-file? arg1 arg2 flag? more? more alt? alt-arg needed maybe another-maybe everything))(newline))
+
+  (apply main command-line-arguments)
+
+Without arguments, with incorrect arguments, with ''-usage'', or ''-help'' this will print:
+
+  usage: csi [-file file|-other-file pathname version] [-flag] [-more more]* [-alt arg]+ needed [maybe [another-maybe [everything]*]]
 
 === Graphical UI ===
 
@@ -96,6 +98,32 @@ is ready. ''finalize-procedure'' runs after the UI
 exists. ''redraw-procedure'' runs as needed to redraw the
 UI. ''listener-procedure'' runs when return is pressed in the
 transcript pane.
+
+  (use qobischeme-ui)
+  (define-application main #f 480 5 2 6
+   (lambda ()
+    (define-button 0 0 "Help" #f help-command)
+    (define-button 5 0 "Quit" #f quit-gui)
+    (define-radio-buttons *object* (lambda () #f)
+     (1 0 line-segment "Line")
+     (2 0 ellipse "Ellipse"))
+    (define-toggle-button 0 1 "Flag" *flag?*
+     (lambda () (say (format #f "Flag=~s" *flag?*))))
+    (define-cycle-button 1 1 *mode*
+     (lambda () (say (format #f "Mode=~s" *mode*)))
+     (a "A")
+     (b "B")
+     (c "C"))
+    (define-integer-range-buttons 2 1 3 1 *k* 0 9
+     (lambda () (format #f "-K ~s" *k*))
+     (lambda () (format #f "+K ~s" *k*))
+     (lambda () (say (format #f "K=~s" *k*))))
+    (define-key (list (control #\x) (control #\c)) "Quit" quit-gui)
+    (define-key (control #\h) "Help" help-command))
+   (lambda () #f)
+   (lambda () #f)
+   (lambda () #f))
+  (main '())
 
 : (define-display-pane-application display-pane-width display-pane-height pre-initialize-procedure post-initialize-procedure finalize-procedure redraw-procedure)
 
